@@ -8,48 +8,40 @@ temp sensor:
 #include "config.h"  // Include the new config file first
 #include "LoRaWan_APP.h"
 #include <Adafruit_BME280.h>
+
 #include <SPI.h>
 #include <Wire.h>
-#include <Adafruit_Sensor.h>
-#include <DHT.h>
 #include <EEPROM.h>
-
-// Define pins for the DHT sensor
-#define DHTPIN 4  // Use GPIO 4
-#define DHTTYPE DHT22 // DHT 22 (AM2302)
-
-// Initialize DHT sensor
-DHT dht(DHTPIN, DHTTYPE);
 
 Adafruit_BME280 bme;  // use I2C interface
 Adafruit_Sensor *bme_temp = bme.getTemperatureSensor();
 Adafruit_Sensor *bme_pressure = bme.getPressureSensor();
 Adafruit_Sensor *bme_humidity = bme.getHumiditySensor();
 
-// Not in reverse order - derived from ESP32 MAC address
+// devEUI will be auto generated, -D LORAWAN_DEVEUI_AUTO should be set
 uint8_t devEui[8];
+// appEui seems to be optional, set to all zeros
 uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-// ToDo still hardcoded - change!
-uint8_t appKey[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t appKey[16];
+
 
 /* ABP para*/
-// ToDo still hardcoded - change!
-uint8_t nwkSKey[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-uint8_t appSKey[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-uint32_t devAddr = (uint32_t)0x00000000;
+uint8_t nwkSKey[] = { 0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda, 0x85 };
+uint8_t appSKey[] = { 0xd7, 0x2c, 0x78, 0x75, 0x8c, 0xdc, 0xca, 0xbf, 0x55, 0xee, 0x4a, 0x77, 0x8d, 0x16, 0xef, 0x67 };
+uint32_t devAddr = (uint32_t)0x007e6ae1;
 
 /*LoraWan channelsmask, default channels 0-7*/
 uint16_t userChannelsMask[6] = { 0x00FF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 };
 
-/*LoraWan region, select the appropriate region manually*/
-LoRaMacRegion_t loraWanRegion = LORAMAC_REGION_EU868; // Change to your region, e.g., LORAMAC_REGION_US915
+/*LoraWan region, select in arduino IDE tools*/
+LoRaMacRegion_t loraWanRegion = LORAMAC_REGION_EU868; 
 // LoRaMacRegion_t loraWanRegion = ACTIVE_REGION; 
 
 /*LoraWan Class, Class A and Class C are supported*/
 DeviceClass_t loraWanClass = CLASS_A;
 
 /*the application data transmission duty cycle.  value in [ms].*/
-uint32_t appTxDutyCycle = 600000; // 600 seconds / 10 minutes
+uint32_t appTxDutyCycle = 600000;
 
 /*OTAA or ABP*/
 bool overTheAirActivation = true;
@@ -86,225 +78,180 @@ uint8_t confirmedNbTrials = 4;
 
 /* Prepares the payload of the frame */
 static void prepareTxFrame(uint8_t port) {
+  /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
+  *appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
+  *if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
+  *if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
+  *for example, if use REGION_CN470, 
+  *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
+  */
+
+  // sensors_event_t temp_event, pressure_event, humidity_event;
+  // bme_temp->getEvent(&temp_event);
+  // bme_pressure->getEvent(&pressure_event);
+  // bme_humidity->getEvent(&humidity_event);
+
+  // appDataSize = 4;
+  // appData[0] = temp_event.temperature;
+  // appData[1] = humidity_event.relative_humidity;
+  // appData[2] = pressure_event.pressure;
+  // appData[3] = 0x03;
+
   sensors_event_t temp_event, pressure_event, humidity_event;
   bme_temp->getEvent(&temp_event);
   bme_pressure->getEvent(&pressure_event);
   bme_humidity->getEvent(&humidity_event);
 
-  // Read humidity and temperature values from DHT sensor
-  float dht_humidity = dht.readHumidity();
-  float dht_temperature = dht.readTemperature(); // Celsius
+  // Konvertiere Temperatur, Luftfeuchtigkeit und Druck in Integer
+  int16_t temperature = (int16_t)(temp_event.temperature * 100);           // Skalierung auf 2 Dezimalstellen
+  uint16_t humidity = (uint16_t)(humidity_event.relative_humidity * 100);  // Skalierung auf 2 Dezimalstellen
+  uint32_t pressure = (uint32_t)(pressure_event.pressure * 100);           // Skalierung auf 2 Dezimalstellen
 
-  // Check if any reads failed and exit early (to try again).
-  if (isnan(dht_humidity) || isnan(dht_temperature)) {
-    Serial.println(F("Failed to read from DHT sensor!"));
-    return;
-  }
+  // AppData-Größe festlegen
+  appDataSize = 9;
 
-  // Debug prints for DHT22 sensor values
-  Serial.print("DHT22 - Temperature: ");
-  Serial.print(dht_temperature);
-  Serial.print(" °C, Humidity: ");
-  Serial.print(dht_humidity);
-  Serial.println(" %");
+  // Payload zusammenstellen
+  appData[0] = (temperature >> 8) & 0xFF;  // Temperatur, MSB
+  appData[1] = temperature & 0xFF;         // Temperatur, LSB
+  appData[2] = (humidity >> 8) & 0xFF;     // Luftfeuchtigkeit, MSB
+  appData[3] = humidity & 0xFF;            // Luftfeuchtigkeit, LSB
+  appData[4] = (pressure >> 16) & 0xFF;    // Druck, MSB
+  appData[5] = (pressure >> 8) & 0xFF;     // Druck, mittleres Byte
+  appData[6] = pressure & 0xFF;            // Druck, LSB
+  
+  // // Spannung (Millivolt) auslesen
+  // int analogVolts = analogReadMilliVolts(1);
+  // appData[7] = (analogVolts >> 8) & 0xFF;  // Spannung, MSB
+  // appData[8] = analogVolts & 0xFF;         // Spannung, LSB       
 
-  // Convert BME280 data to integers
-  int16_t temperature = (int16_t)(temp_event.temperature * 100);           // Scale to 2 decimal places
-  uint16_t humidity = (uint16_t)(humidity_event.relative_humidity * 100);  // Scale to 2 decimal places
-  uint32_t pressure = (uint32_t)(pressure_event.pressure * 100);           // Scale to 2 decimal places
-
-  // Convert DHT22 data to integers
-  int16_t dht_temp_int = (int16_t)(dht_temperature * 100);                 // Scale to 2 decimal places
-  uint16_t dht_hum_int = (uint16_t)(dht_humidity * 100);                   // Scale to 2 decimal places
-
-  // Debug prints for converted DHT22 values
-  Serial.print("Converted DHT22 - Temperature: ");
-  Serial.print(dht_temp_int);
-  Serial.print(", Humidity: ");
-  Serial.println(dht_hum_int);
-
-  // Set AppData size
-  appDataSize = 11;
-
-  // Assemble payload
-  appData[0] = (temperature >> 8) & 0xFF;  // BME280 Temperature, MSB
-  appData[1] = temperature & 0xFF;         // BME280 Temperature, LSB
-  appData[2] = (humidity >> 8) & 0xFF;     // BME280 Humidity, MSB
-  appData[3] = humidity & 0xFF;            // BME280 Humidity, LSB
-  appData[4] = (pressure >> 16) & 0xFF;    // BME280 Pressure, MSB
-  appData[5] = (pressure >> 8) & 0xFF;     // BME280 Pressure, middle byte
-  appData[6] = pressure & 0xFF;            // BME280 Pressure, LSB
-  appData[7] = (dht_temp_int >> 8) & 0xFF; // DHT22 Temperature, MSB
-  appData[8] = dht_temp_int & 0xFF;        // DHT22 Temperature, LSB
-  appData[9] = (dht_hum_int >> 8) & 0xFF;  // DHT22 Humidity, MSB
-  appData[10] = dht_hum_int & 0xFF;        // DHT22 Humidity, LSB
-
-  // Print payload
-  Serial.print("Payload: ");
-  for (int i = 0; i < appDataSize; i++) {
-    Serial.print(appData[i], HEX);
-    Serial.print(" ");
-  }
-  Serial.println();
 }
 
-#define DEVEUI_MAGIC 0x42  // Magic number to validate devEui in EEPROM
-#define ACK_BYTE 0xAA  // Acknowledgment byte
-#define ERROR_BYTE 0xEE  // Error byte
+//if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ
+
 
 void setup() {
-    Serial.begin(115200);
-    EEPROM.begin(512);  // Initialize EEPROM with 512 bytes
-    Serial.println("ESP32 is ready!");
+  Serial.begin(115200);
+  analogReadResolution(12);
+  // Initialize EEPROM (size 512 bytes)
+  EEPROM.begin(512);
 
-    // Attempt to read devEui from EEPROM
-    if (EEPROM.read(8) == DEVEUI_MAGIC) {  // Check magic number
-        for (int i = 0; i < 8; i++) {
-            devEui[i] = EEPROM.read(i);
-        }
-        Serial.println("devEui found in EEPROM.");
-    } else {
-        // ToDo find out what this does - I reimplemeted it by accident :O
-        // #if (LORAWAN_DEVEUI_AUTO)
-        //     LoRaWAN.generateDeveuiByChipID();
-        // #endif
-        Serial.println("devEui not found in EEPROM or invalid magic number. Generating a new one...");
+  // Try to read appKey from EEPROM (address 16-31)
+  bool appKeyValid = false;
+  for (int i = 0; i < 16; i++) {
+    appKey[i] = EEPROM.read(16 + i);
+    if (appKey[i] != 0x00) appKeyValid = true;
+  }
+  if (!appKeyValid) {
+    // If EEPROM is empty, use default key (same as before)
+    uint8_t defaultAppKey[16] = { 0x51, 0x56, 0x65, 0xFA, 0x76, 0x40, 0xB8, 0x56, 0xA7, 0xE7, 0xB5, 0x88, 0x99, 0x9E, 0xC5, 0x20 };
+    for (int i = 0; i < 16; i++) appKey[i] = defaultAppKey[i];
+    Serial.println("appKey not found in EEPROM, using default.");
+  } else {
+    Serial.println("appKey loaded from EEPROM.");
+  }
+  Serial.print("appKey: ");
+  for (int i = 0; i < 16; i++) {
+    Serial.printf("%02X", appKey[i]);
+    if (i < 15) Serial.print(":");
+  }
+  Serial.println();
 
-        // Seed the random number generator
-        randomSeed(esp_random());
-
-        // Generate devEui
-        uint8_t mac[6];
-        esp_read_mac(mac, ESP_MAC_WIFI_STA);  // Read the ESP32's MAC address
-        devEui[0] = random(0, 256);           // Random first byte
-        devEui[1] = random(0, 256);           // Random second byte
-        devEui[2] = mac[0];                   // Use all 6 bytes of the MAC address
-        devEui[3] = mac[1];
-        devEui[4] = mac[2];
-        devEui[5] = mac[3];
-        devEui[6] = mac[4];
-        devEui[7] = mac[5];
-
-        // Save the generated devEui to EEPROM
-        for (int i = 0; i < 8; i++) {
-            EEPROM.write(i, devEui[i]);
-        }
-        EEPROM.write(8, DEVEUI_MAGIC);  // Write magic number
-        EEPROM.commit();
-        Serial.println("Generated devEui saved to EEPROM.");
-    }
-
-    // Print the devEui for debugging
-    Serial.print("devEui: ");
-    for (int i = 0; i < 8; i++) {
-        Serial.printf("%02X", devEui[i]);
-        if (i < 7) Serial.print(":");
-    }
-    Serial.println();
-
-    Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
-
-    if (!bme.begin(0x76)) {
-      Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
-      while (1) delay(10);
-    }
+  Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
+  Serial.println(F("find a valid BME280 sensor"));
+  if (!bme.begin(0x76)) {
+    Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
+    while (1) delay(10);
+  }
 }
 
 void loop() {
 
-    // Check for incoming serial commands
-    if (Serial.available()) {
-        uint8_t cmd = Serial.read();  // Read the command byte
-        if (cmd == 0xEE) {  // EEPROM write command
-            // Wait for the length byte
-            while (!Serial.available()) delay(1);
-            uint8_t length = Serial.read();
-
-            // Clear EEPROM
-            for (int i = 0; i < 512; i++) {
-                EEPROM.write(i, 0);
-            }
-
-            // Write the length to the first byte
-            EEPROM.write(0, length);
-
-            // Read and store the string
-            int idx = 1;
-            while (length > 0) {
-                while (!Serial.available()) delay(1);
-                EEPROM.write(idx++, Serial.read());
-                length--;
-            }
-
-            // Commit the changes to EEPROM
-            if (EEPROM.commit()) {
-                Serial.write(ACK_BYTE);  // Send acknowledgment byte
-                Serial.println("Data written to EEPROM successfully!");
-            } else {
-                Serial.write(ERROR_BYTE);  // Send error byte
-                Serial.println("Failed to commit EEPROM changes");
-            }
-        } else if (cmd == 0xEF) {  // Command to return devEui
-            if (EEPROM.read(8) == DEVEUI_MAGIC) {  // Validate magic number
-                Serial.write(ACK_BYTE);  // Send acknowledgment byte
-                for (int i = 0; i < 8; i++) {
-                    Serial.write(devEui[i]);  // Send each byte of devEui
-                }
-            } else {
-                Serial.write(ERROR_BYTE);  // Send error byte
-            }
+  // Check for incoming serial commands to set appKey
+  if (Serial.available()) {
+    uint8_t cmd = Serial.read();
+    switch (cmd) {
+      case 0xF0:  // Command to set appKey
+      {
+        // Wait for 16 bytes (appKey)
+        uint8_t keyBuf[16];
+        int received = 0;
+        unsigned long start = millis();
+        while (received < 16 && (millis() - start) < 2000) { // 2s timeout
+          if (Serial.available()) {
+            keyBuf[received++] = Serial.read();
+          }
         }
-    }
-
-    switch (deviceState) {
-        case DEVICE_STATE_INIT:
-          {
-                    // ToDo find out what this does - I reimplemeted it by accident :O
-    // #if (LORAWAN_DEVEUI_AUTO)
-    //         LoRaWAN.generateDeveuiByChipID();
-    // #endif
-            LoRaWAN.init(loraWanClass, loraWanRegion);
-            //both set join DR and DR when ADR off
-            LoRaWAN.setDefaultDR(3);
-            break;
+        if (received == 16) {
+          // Store appKey in EEPROM (address 16-31)
+          for (int i = 0; i < 16; i++) {
+            EEPROM.write(16 + i, keyBuf[i]);
+            appKey[i] = keyBuf[i];
           }
-        case DEVICE_STATE_JOIN:
-          {
-            LoRaWAN.join();
-            break;
+          if (EEPROM.commit()) {
+            Serial.write(0xAA); // ACK
+            Serial.println("appKey written to EEPROM successfully!");
+          } else {
+            Serial.write(0xEE); // ERROR
+            Serial.println("Failed to commit appKey to EEPROM");
           }
-        case DEVICE_STATE_SEND:
-          {
-            prepareTxFrame(appPort);
-            LoRaWAN.send();
-            deviceState = DEVICE_STATE_CYCLE;
-            break;
-          }
-        case DEVICE_STATE_CYCLE:
-          {
-            // Schedule next packet transmission
-            txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
-            LoRaWAN.cycle(txDutyCycleTime);
-            deviceState = DEVICE_STATE_SLEEP;
-            break;
-          }
-        case DEVICE_STATE_SLEEP:
-          {
-            LoRaWAN.sleep(loraWanClass);
-            // // Set deep sleep timer for 10 minutes
-            // esp_sleep_enable_timer_wakeup(appTxDutyCycle * 1000);
-            // Serial.println("Going to sleep now...");
-            // esp_deep_sleep_start();
-    
-            
-            break;
-          }
-        default:
-          {
-            deviceState = DEVICE_STATE_INIT;
-            break;
-          }
+        } else {
+          Serial.write(0xEE); // ERROR
+          Serial.println("Timeout or incomplete appKey received");
+        }
+        break;
       }
+      default:
+        // Unknown command, ignore or handle as needed
+        break;
+    }
+  }
 
-    delay(100);  // Add a small delay to avoid busy looping
+  switch (deviceState) {
+    case DEVICE_STATE_INIT:
+      {
+#if (LORAWAN_DEVEUI_AUTO)
+        LoRaWAN.generateDeveuiByChipID();
+#endif
+        LoRaWAN.init(loraWanClass, loraWanRegion);
+        //both set join DR and DR when ADR off
+        LoRaWAN.setDefaultDR(3);
+        break;
+      }
+    case DEVICE_STATE_JOIN:
+      {
+        LoRaWAN.join();
+        break;
+      }
+    case DEVICE_STATE_SEND:
+      {
+        prepareTxFrame(appPort);
+        LoRaWAN.send();
+        deviceState = DEVICE_STATE_CYCLE;
+        break;
+      }
+    case DEVICE_STATE_CYCLE:
+      {
+        // Schedule next packet transmission
+        txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
+        LoRaWAN.cycle(txDutyCycleTime);
+        deviceState = DEVICE_STATE_SLEEP;
+        break;
+      }
+    case DEVICE_STATE_SLEEP:
+      {
+        LoRaWAN.sleep(loraWanClass);
+        // // Set deep sleep timer for 10 minutes
+        // esp_sleep_enable_timer_wakeup(appTxDutyCycle * 1000);
+        // Serial.println("Going to sleep now...");
+        // esp_deep_sleep_start();
+
+        break;
+      }
+    default:
+      {
+        deviceState = DEVICE_STATE_INIT;
+        break;
+      }
+  }
+
 }

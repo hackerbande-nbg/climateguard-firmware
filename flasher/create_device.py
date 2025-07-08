@@ -1,3 +1,5 @@
+import secrets
+
 import datetime
 import os
 import requests
@@ -6,54 +8,178 @@ import serial.tools.list_ports
 import subprocess
 import shutil
 import time
+from dotenv import load_dotenv
+import re
+
 
 DEVEUI_MAGIC = 0x42  # Magic number to validate devEui in EEPROM
 ACK_BYTE = 0xAA  # Acknowledgment byte
 ERROR_BYTE = 0xEE  # Error byte
 
-# Load API key from environment variables
+# Load environment variables from .env file
+load_dotenv()
+
+# Load values from environment variables
 api_key = os.getenv('TTN_API_KEY')
 if not api_key:
     raise ValueError("TTN_API_KEY environment variable not set")
 
 app_id = os.getenv('TTN_APP_ID')
-if not api_key:
+if not app_id:
     raise ValueError("TTN_APP_ID environment variable not set")
 
+
+device_prefix = os.getenv('DEVICE_PREFIX', 'auto')
+application_server_address = os.getenv('APPLICATION_SERVER_ADDRESS', 'eu1.cloud.thethings.network')
+lorawan_version = os.getenv('LORAWAN_VERSION', '1.0.2')
+lorawan_phy_version = os.getenv('LORAWAN_PHY_VERSION', 'PHY_V1_0_2_REV_B')
+frequency_plan_id = os.getenv('FREQUENCY_PLAN_ID', 'EU_863_870')
+supports_join = os.getenv('SUPPORTS_JOIN', 'true').lower() == 'true'
+baudrate = int(os.getenv('BAUD_RATE', '115200'))
+
+# Load climateguard API URL
+climateguard_api_url = os.getenv('CLIMATEGUARD_API_URL')
+if not climateguard_api_url:
+    raise ValueError("CLIMATEGUARD_API_URL environment variable not set")
+
+# Post a new device to the climateguard API
+def post_device_to_climateguard(device_name, dev_eui):
+    """
+    Register a new device in the climateguard API.
+    :param device_name: Name of the device (string)
+    :param dev_eui: Device EUI as hex string (with or without colons)
+
+    :return: Response object or None
+    """
+    url = climateguard_api_url.rstrip('/') + '/devices'
+    payload = {
+        "name": device_name,
+        "deveui": dev_eui.replace(":", ""),
+    }
+    try:
+        response = requests.post(url, json=payload)
+        if response.status_code in (200, 201):
+            print(f"Device posted to climateguard API: {device_name}")
+        else:
+            print(f"Failed to post device to climateguard API: {response.status_code} - {response.text}")
+        return response
+    except Exception as e:
+        print(f"Error posting device to climateguard API: {e}")
+        return None
+    
+# Write a 16-byte appKey into the EEPROM of an attached ESP32
+def write_appkey_to_eeprom_with_retry(port, baudrate, appkey_bytes, max_retries=12):
+    """
+    Attempt to write the appKey to EEPROM, retrying every 5 seconds if unsuccessful.
+    :param port: Serial port to communicate with the device.
+    :param baudrate: Baud rate for the serial communication.
+    :param appkey_bytes: 16-byte appKey to write.
+    :param max_retries: Maximum number of retries (default: 12, i.e., 1 minute).
+    :return: True if successful, False otherwise.
+    """
+    retries = 0
+    while retries < max_retries:
+        try:
+            with serial.Serial(port, baudrate, timeout=2) as ser:
+                # Command byte for appKey
+                data = bytearray([0xF0])
+                data.extend(appkey_bytes)
+                ser.write(data)
+                print(f"Sending appKey to ESP32: {appkey_bytes.hex()}")
+                # Wait for acknowledgment
+                response = ser.read()
+                if response and response[0] == ACK_BYTE:
+                    print("appKey write confirmed by ESP32")
+                    return True
+                else:
+                    print("No confirmation received from ESP32 for appKey write")
+        except serial.SerialException as e:
+            print(f"Failed to write appKey to EEPROM: {e}")
+        retries += 1
+        elapsed_time = retries * 5
+        print(f"Retrying to write appKey... {elapsed_time} seconds elapsed.")
+        time.sleep(5)
+    print("Failed to write appKey after maximum retries.")
+    return False
+    
+
+def get_next_device_name():
+    """
+    Query the climateguard API for existing devices and find the next available device name
+    with the prefix DEVICE_PREFIX and an incremental number.
+    """
+    devices_url = climateguard_api_url.rstrip('/') + '/devices'
+    all_devices = []
+    page = 1
+    page_size = 100
+    while True:
+        params = {'page': page, 'limit': page_size}
+        try:
+            response = requests.get(devices_url, params=params)
+            response.raise_for_status()
+            devices = response.json()
+        except Exception as e:
+            print(f"Failed to fetch devices from {devices_url} (page {page}): {e}")
+            break
+
+        data = devices.get('data', [])
+        if not data:
+            break
+        
+        all_devices.extend(data)
+        if len(data) < page_size:
+            break
+        page += 1
+
+    # Find all device names that start with the prefix
+    pattern = re.compile(rf"^{re.escape(device_prefix)}-(\d+)$")
+    max_num = 0
+    for device in all_devices:
+        name = device.get('name') or device.get('device_id') or ''
+        match = pattern.match(name)
+        if match:
+            num = int(match.group(1))
+            if num > max_num:
+                max_num = num
+    next_num = max_num + 1
+    return f"{device_prefix}-{next_num}"
+
 # Define the API endpoint and headers
-url = f"https://eu1.cloud.thethings.network/api/v3/applications/{app_id}/devices"
+url = f"https://{application_server_address}/api/v3/applications/{app_id}/devices"
 headers = {
     "Authorization": f"Bearer {api_key}",
     "Content-Type": "application/json"
 }
 
-def create_device_in_ttn(dev_eui):
-
-    # Generate a device_id with "auto" and a timestamp
+def create_device_in_ttn(dev_eui, appkey):
+    # Generate a device_id with prefix and next available number
+    device_id = get_next_device_name()
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    device_id = f"auto-{timestamp}"
 
     # Remove colons from devEui
     dev_eui = dev_eui.replace(":", "")
 
     # Define the payload for creating a new device
-    # ToDo Appkey missing
-    # ToDo Lorawan details not visible on created device - problem?
     payload = {
-    "end_device": {
-        "ids": {
-        "device_id": f"{device_id}",
-        "dev_eui": f"{dev_eui}",
-        "join_eui": "0000000000000000"
-        },
-        "name": f"Created via Python Flasher on {timestamp}",
-        "network_server_address": "eu1.cloud.thethings.network",
-        "application_server_address": "eu1.cloud.thethings.network",
-        "lorawan_version": "1.0.2",
-        "lorawan_phy_version": "PHY_V1_0_2_REV_B",
-        "frequency_plan_id": "EU_863_870",
-        "supports_join": True
-    }
+        "end_device": {
+            "ids": {
+                "device_id": device_id,
+                "dev_eui": dev_eui,
+                "join_eui": "0000000000000000"
+            },
+            "name": device_id,
+            "network_server_address": application_server_address,
+            "application_server_address": application_server_address,
+            "lorawan_version": lorawan_version,
+            "lorawan_phy_version": lorawan_phy_version,
+            "frequency_plan_id": frequency_plan_id,
+            "supports_join": supports_join,
+            "root_keys": {
+                "app_key": {
+                    "key": appkey.hex().upper()
+                }
+            }
+        }
     }
 
     # Make the API request to create the device
@@ -63,32 +189,33 @@ def create_device_in_ttn(dev_eui):
         print(f"Device created successfully with EUI: {dev_eui}")
     else:
         print(f"Failed to create device: {response.status_code} - {response.text}")
+        exit(1)
 
-# Write a test string into the EEPROM of an attached ESP32
-def write_to_eeprom(port, baudrate, test_string):
-    try:
-        with serial.Serial(port, baudrate, timeout=1) as ser:
-            # Convert string to bytes
-            string_bytes = test_string.encode('utf-8')
-            string_length = len(string_bytes)
+# # Write a test string into the EEPROM of an attached ESP32
+# def write_to_eeprom(port, baudrate, test_string):
+#     try:
+#         with serial.Serial(port, baudrate, timeout=1) as ser:
+#             # Convert string to bytes
+#             string_bytes = test_string.encode('utf-8')
+#             string_length = len(string_bytes)
 
-            # Create payload: command byte + length byte + string
-            data = bytearray([0xEE])  # Command byte
-            data.append(string_length)  # Length byte
-            data.extend(string_bytes)  # String data
+#             # Create payload: command byte + length byte + string
+#             data = bytearray([0xEE])  # Command byte
+#             data.append(string_length)  # Length byte
+#             data.extend(string_bytes)  # String data
 
-            ser.write(data)
-            print(f"Sending to EEPROM: {test_string} (length: {string_length})")
+#             ser.write(data)
+#             print(f"Sending to EEPROM: {test_string} (length: {string_length})")
 
-            # Wait for acknowledgment
-            response = ser.read()
-            if response and response[0] == 0xAA:
-                print("Write confirmed by ESP32")
-            else:
-                print("No confirmation received from ESP32")
+#             # Wait for acknowledgment
+#             response = ser.read()
+#             if response and response[0] == 0xAA:
+#                 print("Write confirmed by ESP32")
+#             else:
+#                 print("No confirmation received from ESP32")
 
-    except serial.SerialException as e:
-        print(f"Failed to write to EEPROM: {e}")
+#     except serial.SerialException as e:
+#         print(f"Failed to write to EEPROM: {e}")
 
 
 def read_deveui_from_eeprom(port, baudrate):
@@ -176,8 +303,11 @@ def flash_platformio_project(project_dir, env_name=None):
         print(f"Error during PlatformIO operation: {e}")
         exit(1)
 
-# Example usage
 if __name__ == "__main__":
+
+    device_name = get_next_device_name()
+    print(f"Next available device name: {device_name}")
+
     available_ports = list_com_ports()
     if (available_ports):
         if len(available_ports) == 1:
@@ -194,11 +324,12 @@ if __name__ == "__main__":
         print("No COM ports available.")
         exit(1)
 
-    baudrate = 115200
 
-    # Path to your PlatformIO project directory
-    # ToDo this sucks
-    project_directory = r"path\to\your\platformio\project"  # Update this to your project directory
+    # Path to your PlatformIO project directory from environment variable
+    project_directory = os.getenv('PLATFORMIO_PROJECT_PATH')
+    if not project_directory:
+        print("PLATFORMIO_PROJECT_PATH environment variable not set.")
+        exit(1)
 
     # Optional: Specify the environment name (if you have multiple environments in platformio.ini)
     environment_name = None  # e.g., "esp32dev"
@@ -210,8 +341,33 @@ if __name__ == "__main__":
     dev_eui = read_deveui_from_eeprom_with_retry(esp32_port, baudrate)
     if dev_eui:
         print(f"Device EUI: {dev_eui}")
-        # Create the device in The Things Stack
-        create_device_in_ttn(dev_eui)
+        # Generate a random 16-byte appKey
+        appkey_bytes = secrets.token_bytes(16)
+        print(f"Generated random appKey: {appkey_bytes.hex()}")
+
+        # Write the appKey to the ESP32
+        if write_appkey_to_eeprom_with_retry(esp32_port, baudrate, appkey_bytes):
+            print("appKey successfully written to device.")
+        else:
+            print("Failed to write appKey to device.")
+            exit(1)
+        
+        # Create the device in The Things Stack, using the generated appKey
+        create_device_in_ttn(dev_eui, appkey_bytes)
     else:
         print("Unable to retrieve Device EUI.")
+        exit(1)
+
+
+    # Post the device to the climateguard API
+    response = post_device_to_climateguard(device_name, dev_eui)
+    if response and response.status_code in (200, 201):
+        print(f"Device {device_name} successfully posted to climateguard API.")
+    else:
+        print("Failed to post device to climateguard API.")
+        # Log response details if available
+        if response:
+            print(f"Response status code: {response.status_code}")
+            print(f"Response text: {response.text}")
+
 
