@@ -200,6 +200,14 @@ void loop() {
         }
         break;
       }
+      case 0xEF:  // Command to read devEui
+      {
+        Serial.write(0xAA); // ACK
+        for (int i = 0; i < 8; i++) {
+          Serial.write(devEui[i]);
+        }
+        break;
+      }
       default:
         // Unknown command, ignore or handle as needed
         break;
