@@ -163,6 +163,9 @@ def create_device_in_ttn(dev_eui, appkey):
     payload = {
         "end_device": {
             "ids": {
+                "application_ids": {
+                    "application_id": app_id
+                },
                 "device_id": device_id,
                 "dev_eui": dev_eui,
                 "join_eui": "0000000000000000"
