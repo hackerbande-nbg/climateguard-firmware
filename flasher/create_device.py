@@ -159,8 +159,8 @@ def create_device_in_ttn(dev_eui, appkey):
     # Remove colons from devEui
     dev_eui = dev_eui.replace(":", "")
 
-    # Define the payload for creating a new device
-    payload = {
+    # 1. Initial POST to create the device with minimal fields
+    post_payload = {
         "end_device": {
             "ids": {
                 "application_ids": {
@@ -170,29 +170,149 @@ def create_device_in_ttn(dev_eui, appkey):
                 "dev_eui": dev_eui,
                 "join_eui": "0000000000000000"
             },
-            "name": device_id,
             "network_server_address": application_server_address,
             "application_server_address": application_server_address,
+            "join_server_address": application_server_address
+        },
+        "field_mask": {
+            "paths": [
+                "network_server_address",
+                "application_server_address",
+                "join_server_address"
+            ]
+        }
+    }
+    post_url = f"https://{application_server_address}/api/v3/applications/{app_id}/devices"
+    response = requests.post(post_url, json=post_payload, headers=headers)
+    if response.status_code not in (200, 201):
+        print(f"Initial POST failed: {response.status_code} - {response.text}")
+        exit(1)
+
+    # 2. PUT to NS endpoint
+    ns_url = f"https://{application_server_address}/api/v3/ns/applications/{app_id}/devices/{device_id}"
+    ns_payload = {
+        "end_device": {
+            "frequency_plan_id": frequency_plan_id,
             "lorawan_version": lorawan_version,
             "lorawan_phy_version": lorawan_phy_version,
-            "frequency_plan_id": frequency_plan_id,
             "supports_join": supports_join,
+            "multicast": False,
+            "supports_class_b": False,
+            "supports_class_c": False,
+            "mac_settings": {
+                "rx2_data_rate_index": 0,
+                "rx2_frequency": "869525000"
+            },
+            "ids": {
+                "join_eui": "0000000000000000",
+                "dev_eui": dev_eui,
+                "device_id": device_id,
+                "application_ids": {
+                    "application_id": app_id
+                }
+            }
+        },
+        "field_mask": {
+            "paths": [
+                "frequency_plan_id",
+                "lorawan_version",
+                "lorawan_phy_version",
+                "supports_join",
+                "multicast",
+                "supports_class_b",
+                "supports_class_c",
+                "mac_settings.rx2_data_rate_index",
+                "mac_settings.rx2_frequency",
+                "ids.join_eui",
+                "ids.dev_eui",
+                "ids.device_id",
+                "ids.application_ids.application_id"
+            ]
+        }
+    }
+    response = requests.put(ns_url, json=ns_payload, headers=headers)
+    if response.status_code not in (200, 201):
+        print(f"NS PUT failed: {response.status_code} - {response.text}")
+        exit(1)
+
+    # 3. PUT to AS endpoint
+    as_url = f"https://{application_server_address}/api/v3/as/applications/{app_id}/devices/{device_id}"
+    as_payload = {
+        "end_device": {
+            "ids": {
+                "join_eui": "0000000000000000",
+                "dev_eui": dev_eui,
+                "device_id": device_id,
+                "application_ids": {
+                    "application_id": app_id
+                }
+            }
+        },
+        "field_mask": {
+            "paths": [
+                "ids.join_eui",
+                "ids.dev_eui",
+                "ids.device_id",
+                "ids.application_ids.application_id"
+            ]
+        }
+    }
+    response = requests.put(as_url, json=as_payload, headers=headers)
+    if response.status_code not in (200, 201):
+        print(f"AS PUT failed: {response.status_code} - {response.text}")
+        exit(1)
+
+    # 4. PUT to JS endpoint
+    js_url = f"https://{application_server_address}/api/v3/js/applications/{app_id}/devices/{device_id}"
+    js_payload = {
+        "end_device": {
+            "ids": {
+                "join_eui": "0000000000000000",
+                "dev_eui": dev_eui,
+                "device_id": device_id,
+                "application_ids": {
+                    "application_id": app_id
+                }
+            },
+            "network_server_address": application_server_address,
+            "application_server_address": application_server_address,
             "root_keys": {
                 "app_key": {
                     "key": appkey.hex().upper()
                 }
             }
+        },
+        "field_mask": {
+            "paths": [
+                "network_server_address",
+                "application_server_address",
+                "ids.join_eui",
+                "ids.dev_eui",
+                "ids.device_id",
+                "ids.application_ids.application_id",
+                "root_keys.app_key.key"
+            ]
         }
     }
-
-    # Make the API request to create the device
-    response = requests.post(url, json=payload, headers=headers)
-
-    if response.status_code == 200:
-        print(f"Device created successfully with EUI: {dev_eui}")
-    else:
-        print(f"Failed to create device: {response.status_code} - {response.text}")
+    response = requests.put(js_url, json=js_payload, headers=headers)
+    if response.status_code not in (200, 201):
+        print(f"JS PUT failed: {response.status_code} - {response.text}")
         exit(1)
+
+    # # 5. Final PUT to main endpoint for label_ids (empty update)
+    # put_url = f"https://{application_server_address}/api/v3/applications/{app_id}/devices/{device_id}"
+    # put_payload = {
+    #     "end_device": {},
+    #     "field_mask": {
+    #         "paths": ["label_ids"]
+    #     }
+    # }
+    # response = requests.put(put_url, json=put_payload, headers=headers)
+    # if response.status_code not in (200, 201):
+    #     print(f"Final PUT failed: {response.status_code} - {response.text}")
+    #     exit(1)
+
+    print(f"Device created and updated successfully with EUI: {dev_eui}")
 
 # # Write a test string into the EEPROM of an attached ESP32
 # def write_to_eeprom(port, baudrate, test_string):
