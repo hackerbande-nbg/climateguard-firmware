@@ -24,6 +24,11 @@ api_key = os.getenv('TTN_API_KEY')
 if not api_key:
     raise ValueError("TTN_API_KEY environment variable not set")
 
+# Load climateguard API key
+climateguard_api_key = os.getenv('CLIMATEGUARD_API_KEY')
+if not climateguard_api_key:
+    raise ValueError("CLIMATEGUARD_API_KEY environment variable not set")
+
 app_id = os.getenv('TTN_APP_ID')
 if not app_id:
     raise ValueError("TTN_APP_ID environment variable not set")
@@ -56,8 +61,12 @@ def post_device_to_climateguard(device_name, dev_eui):
         "name": device_name,
         "deveui": dev_eui.replace(":", ""),
     }
+    headers = {
+        "X-API-Key": climateguard_api_key,
+        "Content-Type": "application/json"
+    }
     try:
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload, headers=headers)
         if response.status_code in (200, 201):
             print(f"Device posted to climateguard API: {device_name}")
         else:
@@ -299,6 +308,9 @@ def create_device_in_ttn(dev_eui, appkey):
         print(f"JS PUT failed: {response.status_code} - {response.text}")
         exit(1)
 
+
+    # Has been deactivated as it did not work on first try and we also don't use labels atm :)
+    
     # # 5. Final PUT to main endpoint for label_ids (empty update)
     # put_url = f"https://{application_server_address}/api/v3/applications/{app_id}/devices/{device_id}"
     # put_payload = {
@@ -313,32 +325,6 @@ def create_device_in_ttn(dev_eui, appkey):
     #     exit(1)
 
     print(f"Device created and updated successfully with EUI: {dev_eui}")
-
-# # Write a test string into the EEPROM of an attached ESP32
-# def write_to_eeprom(port, baudrate, test_string):
-#     try:
-#         with serial.Serial(port, baudrate, timeout=1) as ser:
-#             # Convert string to bytes
-#             string_bytes = test_string.encode('utf-8')
-#             string_length = len(string_bytes)
-
-#             # Create payload: command byte + length byte + string
-#             data = bytearray([0xEE])  # Command byte
-#             data.append(string_length)  # Length byte
-#             data.extend(string_bytes)  # String data
-
-#             ser.write(data)
-#             print(f"Sending to EEPROM: {test_string} (length: {string_length})")
-
-#             # Wait for acknowledgment
-#             response = ser.read()
-#             if response and response[0] == 0xAA:
-#                 print("Write confirmed by ESP32")
-#             else:
-#                 print("No confirmation received from ESP32")
-
-#     except serial.SerialException as e:
-#         print(f"Failed to write to EEPROM: {e}")
 
 
 def read_deveui_from_eeprom(port, baudrate):
