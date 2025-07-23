@@ -1,10 +1,3 @@
-/* 
-Heltec Board which includes LoRaWan
-temp sensor: 
-- BME280 or
-- DHT22
-*/
-
 #include "config.h"  // Include the new config file first
 #include "LoRaWan_APP.h"
 #include <Adafruit_BME280.h>
@@ -12,6 +5,10 @@ temp sensor:
 #include <SPI.h>
 #include <Wire.h>
 #include <EEPROM.h>
+
+#define Read_VBAT_Voltage 1
+#define ADC_CTRL 37 // Heltec GPIO to toggle VBatt read connection …
+#define ADC_READ_STABILIZE 10 // in ms (delay from GPIO control and ADC connections times)
 
 Adafruit_BME280 bme;  // use I2C interface
 Adafruit_Sensor *bme_temp = bme.getTemperatureSensor();
@@ -76,6 +73,16 @@ uint8_t appPort = 2;
 */
 uint8_t confirmedNbTrials = 4;
 
+/* Liest die Batteriespannung und gibt sie als float (V) zurück */
+float readBatteryVoltage() {
+  digitalWrite(ADC_CTRL, HIGH);
+  delay(ADC_READ_STABILIZE);
+  int millivolts = analogReadMilliVolts(Read_VBAT_Voltage);
+  digitalWrite(ADC_CTRL, LOW);
+  // In tatsächliche Batteriespannung umwandeln
+  return (millivolts / 1000.0) * 4.9;
+}
+
 /* Prepares the payload of the frame */
 static void prepareTxFrame(uint8_t port) {
   /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
@@ -102,10 +109,14 @@ static void prepareTxFrame(uint8_t port) {
   bme_pressure->getEvent(&pressure_event);
   bme_humidity->getEvent(&humidity_event);
 
+  // Spannung (Batteriespannung) auslesen
+  float voltage = readBatteryVoltage();
+
   // Konvertiere Temperatur, Luftfeuchtigkeit und Druck in Integer
   int16_t temperature = (int16_t)(temp_event.temperature * 100);           // Skalierung auf 2 Dezimalstellen
   uint16_t humidity = (uint16_t)(humidity_event.relative_humidity * 100);  // Skalierung auf 2 Dezimalstellen
   uint32_t pressure = (uint32_t)(pressure_event.pressure * 100);           // Skalierung auf 2 Dezimalstellen
+  uint16_t voltageInt = (uint16_t)(voltage * 100); // Skalierung auf 2 Dezimalstellen
 
   // AppData-Größe festlegen
   appDataSize = 9;
@@ -118,11 +129,8 @@ static void prepareTxFrame(uint8_t port) {
   appData[4] = (pressure >> 16) & 0xFF;    // Druck, MSB
   appData[5] = (pressure >> 8) & 0xFF;     // Druck, mittleres Byte
   appData[6] = pressure & 0xFF;            // Druck, LSB
-  
-  // // Spannung (Millivolt) auslesen
-  // int analogVolts = analogReadMilliVolts(1);
-  // appData[7] = (analogVolts >> 8) & 0xFF;  // Spannung, MSB
-  // appData[8] = analogVolts & 0xFF;         // Spannung, LSB       
+  appData[7] = (voltageInt >> 8) & 0xFF;  // Spannung, MSB
+  appData[8] = voltageInt & 0xFF;         // Spannung, LSB
 
 }
 
@@ -130,8 +138,10 @@ static void prepareTxFrame(uint8_t port) {
 
 
 void setup() {
+  pinMode(ADC_CTRL, OUTPUT);
+
   Serial.begin(115200);
-  analogReadResolution(12);
+  // analogReadResolution(12);
   // Initialize EEPROM (size 512 bytes)
   EEPROM.begin(512);
 
