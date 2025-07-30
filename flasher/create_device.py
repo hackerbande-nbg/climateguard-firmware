@@ -112,7 +112,7 @@ def write_appkey_to_eeprom_with_retry(port, baudrate, appkey_bytes, max_retries=
     return False
     
 
-def get_next_device_name():
+def get_device_name(deveui=None):
     """
     Query the climateguard API for existing devices and find the next available device name
     with the prefix DEVICE_PREFIX and an incremental number.
@@ -140,6 +140,15 @@ def get_next_device_name():
             break
         page += 1
 
+    # Check if deveui is provided and find the existing device id
+    if deveui:
+        for device in all_devices:
+            if device.get('deveui') == deveui.replace(":", "").upper():
+                existing_device_id = device.get('device_id')
+                existing_device_name = device.get('name')
+                if existing_device_id:
+                    return existing_device_name, existing_device_id
+
     # Find all device names that start with the prefix
     pattern = re.compile(rf"^{re.escape(device_prefix)}-(\d+)$")
     max_num = 0
@@ -151,22 +160,30 @@ def get_next_device_name():
             if num > max_num:
                 max_num = num
     next_num = max_num + 1
-    return f"{device_prefix}-{next_num}"
+    next_device_name = f"{device_prefix}-{next_num}"
+    return next_device_name, None
 
-# Define the API endpoint and headers
-url = f"https://{application_server_address}/api/v3/applications/{app_id}/devices"
-headers = {
-    "Authorization": f"Bearer {api_key}",
-    "Content-Type": "application/json"
-}
 
-def create_device_in_ttn(dev_eui, appkey):
-    # Generate a device_id with prefix and next available number
-    device_id = get_next_device_name()
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-
+def create_device_in_ttn(dev_eui):
+    # Define the API endpoint and headers
+    # url = f"https://{application_server_address}/api/v3/applications/{app_id}/devices"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
     # Remove colons from devEui
     dev_eui = dev_eui.replace(":", "")
+    
+    # Generate a device_id with prefix and next available number
+    device_id_ttn, already_exists_id = get_device_name(dev_eui)
+    if already_exists_id:
+        print(f"Device with EUI {dev_eui} already exists in backend as {device_id_ttn}, device id {already_exists_id}.")
+        return device_id_ttn, True, None
+
+    # Generate a random 16-byte appKey
+    appkey = secrets.token_bytes(16)
+    print(f"Generated random appKey: {appkey.hex()}")
 
     # 1. Initial POST to create the device with minimal fields
     post_payload = {
@@ -175,7 +192,7 @@ def create_device_in_ttn(dev_eui, appkey):
                 "application_ids": {
                     "application_id": app_id
                 },
-                "device_id": device_id,
+                "device_id": device_id_ttn,
                 "dev_eui": dev_eui,
                 "join_eui": "0000000000000000"
             },
@@ -198,7 +215,7 @@ def create_device_in_ttn(dev_eui, appkey):
         exit(1)
 
     # 2. PUT to NS endpoint
-    ns_url = f"https://{application_server_address}/api/v3/ns/applications/{app_id}/devices/{device_id}"
+    ns_url = f"https://{application_server_address}/api/v3/ns/applications/{app_id}/devices/{device_id_ttn}"
     ns_payload = {
         "end_device": {
             "frequency_plan_id": frequency_plan_id,
@@ -215,7 +232,7 @@ def create_device_in_ttn(dev_eui, appkey):
             "ids": {
                 "join_eui": "0000000000000000",
                 "dev_eui": dev_eui,
-                "device_id": device_id,
+                "device_id": device_id_ttn,
                 "application_ids": {
                     "application_id": app_id
                 }
@@ -245,13 +262,13 @@ def create_device_in_ttn(dev_eui, appkey):
         exit(1)
 
     # 3. PUT to AS endpoint
-    as_url = f"https://{application_server_address}/api/v3/as/applications/{app_id}/devices/{device_id}"
+    as_url = f"https://{application_server_address}/api/v3/as/applications/{app_id}/devices/{device_id_ttn}"
     as_payload = {
         "end_device": {
             "ids": {
                 "join_eui": "0000000000000000",
                 "dev_eui": dev_eui,
-                "device_id": device_id,
+                "device_id": device_id_ttn,
                 "application_ids": {
                     "application_id": app_id
                 }
@@ -272,13 +289,13 @@ def create_device_in_ttn(dev_eui, appkey):
         exit(1)
 
     # 4. PUT to JS endpoint
-    js_url = f"https://{application_server_address}/api/v3/js/applications/{app_id}/devices/{device_id}"
+    js_url = f"https://{application_server_address}/api/v3/js/applications/{app_id}/devices/{device_id_ttn}"
     js_payload = {
         "end_device": {
             "ids": {
                 "join_eui": "0000000000000000",
                 "dev_eui": dev_eui,
-                "device_id": device_id,
+                "device_id": device_id_ttn,
                 "application_ids": {
                     "application_id": app_id
                 }
@@ -325,6 +342,7 @@ def create_device_in_ttn(dev_eui, appkey):
     #     exit(1)
 
     print(f"Device created and updated successfully with EUI: {dev_eui}")
+    return device_id_ttn, False, appkey
 
 
 def read_deveui_from_eeprom(port, baudrate):
@@ -414,9 +432,6 @@ def flash_platformio_project(project_dir, env_name=None):
 
 if __name__ == "__main__":
 
-    device_name = get_next_device_name()
-    print(f"Next available device name: {device_name}")
-
     available_ports = list_com_ports()
     if (available_ports):
         if len(available_ports) == 1:
@@ -450,33 +465,37 @@ if __name__ == "__main__":
     dev_eui = read_deveui_from_eeprom_with_retry(esp32_port, baudrate)
     if dev_eui:
         print(f"Device EUI: {dev_eui}")
-        # Generate a random 16-byte appKey
-        appkey_bytes = secrets.token_bytes(16)
-        print(f"Generated random appKey: {appkey_bytes.hex()}")
 
-        # Write the appKey to the ESP32
-        if write_appkey_to_eeprom_with_retry(esp32_port, baudrate, appkey_bytes):
-            print("appKey successfully written to device.")
-        else:
-            print("Failed to write appKey to device.")
-            exit(1)
         
         # Create the device in The Things Stack, using the generated appKey
-        create_device_in_ttn(dev_eui, appkey_bytes)
+        device_name, already_existed, new_app_key = create_device_in_ttn(dev_eui)
     else:
         print("Unable to retrieve Device EUI.")
         exit(1)
 
-
-    # Post the device to the climateguard API
-    response = post_device_to_climateguard(device_name, dev_eui)
-    if response and response.status_code in (200, 201):
-        print(f"Device {device_name} successfully posted to climateguard API.")
+    if already_existed:
+        print("Device already exists in backend, skipping creation.")
+        exit(0)
     else:
-        print("Failed to post device to climateguard API.")
-        # Log response details if available
-        if response:
-            print(f"Response status code: {response.status_code}")
-            print(f"Response text: {response.text}")
+
+
+        # Write the appKey to the ESP32
+        if write_appkey_to_eeprom_with_retry(esp32_port, baudrate, new_app_key):
+            print("appKey successfully written to device.")
+        else:
+            print("Failed to write appKey to device.")
+            exit(1)
+
+        print("Device does not exist in backend, proceeding with creation.")
+        # Post the device to the climateguard API
+        response = post_device_to_climateguard(device_name, dev_eui)
+        if response and response.status_code in (200, 201):
+            print(f"Device {device_name} successfully posted to climateguard API.")
+        else:
+            print("Failed to post device to climateguard API.")
+            # Log response details if available
+            if response:
+                print(f"Response status code: {response.status_code}")
+                print(f"Response text: {response.text}")
 
 

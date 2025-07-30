@@ -118,19 +118,20 @@ static void prepareTxFrame(uint8_t port) {
   uint32_t pressure = (uint32_t)(pressure_event.pressure * 100);           // Skalierung auf 2 Dezimalstellen
   uint16_t voltageInt = (uint16_t)(voltage * 100); // Skalierung auf 2 Dezimalstellen
 
-  // AppData-Größe festlegen
-  appDataSize = 9;
+  // AppData-Größe festlegen (1 version byte + 9 data bytes)
+  appDataSize = 10;
 
   // Payload zusammenstellen
-  appData[0] = (temperature >> 8) & 0xFF;  // Temperatur, MSB
-  appData[1] = temperature & 0xFF;         // Temperatur, LSB
-  appData[2] = (humidity >> 8) & 0xFF;     // Luftfeuchtigkeit, MSB
-  appData[3] = humidity & 0xFF;            // Luftfeuchtigkeit, LSB
-  appData[4] = (pressure >> 16) & 0xFF;    // Druck, MSB
-  appData[5] = (pressure >> 8) & 0xFF;     // Druck, mittleres Byte
-  appData[6] = pressure & 0xFF;            // Druck, LSB
-  appData[7] = (voltageInt >> 8) & 0xFF;  // Spannung, MSB
-  appData[8] = voltageInt & 0xFF;         // Spannung, LSB
+  appData[0] = 1; // Version byte
+  appData[1] = (temperature >> 8) & 0xFF;  // Temperatur, MSB
+  appData[2] = temperature & 0xFF;         // Temperatur, LSB
+  appData[3] = (humidity >> 8) & 0xFF;     // Luftfeuchtigkeit, MSB
+  appData[4] = humidity & 0xFF;            // Luftfeuchtigkeit, LSB
+  appData[5] = (pressure >> 16) & 0xFF;    // Druck, MSB
+  appData[6] = (pressure >> 8) & 0xFF;     // Druck, mittleres Byte
+  appData[7] = pressure & 0xFF;            // Druck, LSB
+  appData[8] = (voltageInt >> 8) & 0xFF;  // Spannung, MSB
+  appData[9] = voltageInt & 0xFF;         // Spannung, LSB
 
 }
 
