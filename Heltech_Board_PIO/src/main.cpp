@@ -228,6 +228,7 @@ void loop() {
   switch (deviceState) {
     case DEVICE_STATE_INIT:
       {
+        Serial.println("ENTERING DEVICE_STATE_INIT...");
 #if (LORAWAN_DEVEUI_AUTO)
         LoRaWAN.generateDeveuiByChipID();
 #endif
@@ -238,11 +239,13 @@ void loop() {
       }
     case DEVICE_STATE_JOIN:
       {
+        Serial.println("ENTERING DEVICE_STATE_JOIN...");
         LoRaWAN.join();
         break;
       }
     case DEVICE_STATE_SEND:
       {
+        Serial.println("ENTERING DEVICE_STATE_SEND...");
         prepareTxFrame(appPort);
         LoRaWAN.send();
         deviceState = DEVICE_STATE_CYCLE;
@@ -250,6 +253,7 @@ void loop() {
       }
     case DEVICE_STATE_CYCLE:
       {
+        Serial.println("ENTERING DEVICE_STATE_CYCLE...");
         // Schedule next packet transmission
         txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
         LoRaWAN.cycle(txDutyCycleTime);
@@ -258,8 +262,13 @@ void loop() {
       }
     case DEVICE_STATE_SLEEP:
       {
+        // Serial.println("ENTERING DEVICE_STATE_SLEEP...");
+        // Add 5 second delay before sleep
+        // This was done because when activating lines after "Set deep sleep timer...", 
+        //    the device did not send anymore, not even once after startup
+        // delay(1000);
         LoRaWAN.sleep(loraWanClass);
-        // // Set deep sleep timer for 10 minutes
+        // Set deep sleep timer for 10 minutes
         // esp_sleep_enable_timer_wakeup(appTxDutyCycle * 1000);
         // Serial.println("Going to sleep now...");
         // esp_deep_sleep_start();
@@ -268,6 +277,7 @@ void loop() {
       }
     default:
       {
+        Serial.println("Unknown device state, resetting...");
         deviceState = DEVICE_STATE_INIT;
         break;
       }
