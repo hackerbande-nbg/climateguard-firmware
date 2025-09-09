@@ -112,6 +112,51 @@ def write_appkey_to_eeprom_with_retry(port, baudrate, appkey_bytes, max_retries=
     return False
     
 
+def delete_device_from_ttn(device_id):
+    """
+    Delete a device from The Things Network.
+    
+    :param device_id: The device ID to delete.
+    :return: True if successful, False otherwise.
+    """
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # Define all endpoints that need to be deleted from
+    endpoints = [
+        f"https://{application_server_address}/api/v3/as/applications/{app_id}/devices/{device_id}",
+        f"https://{application_server_address}/api/v3/ns/applications/{app_id}/devices/{device_id}",
+        f"https://{application_server_address}/api/v3/applications/{app_id}/devices/{device_id}",
+        f"https://{application_server_address}/api/v3/js/applications/{app_id}/devices/{device_id}"
+    ]
+    
+    try:
+        print(f"Deleting device {device_id} from The Things Network...")
+        success = True
+        
+        for endpoint in endpoints:
+            print(f"  DELETE {endpoint}")
+            response = requests.delete(endpoint, headers=headers)
+            
+            if response.status_code in (200, 204):
+                print(f"  ✓ Success")
+            else:
+                print(f"  ✗ Failed: {response.status_code} - {response.text}")
+                success = False
+        
+        if success:
+            print(f"Device {device_id} successfully deleted from all TTN components.")
+            return True
+        else:
+            print(f"Warning: Device {device_id} may not have been completely removed from all TTN components.")
+            return False
+    except Exception as e:
+        print(f"Error deleting device {device_id}: {e}")
+        return False
+
+
 def get_device_name(deveui=None):
     """
     Query the climateguard API for existing devices and find the next available device name
@@ -165,26 +210,55 @@ def get_device_name(deveui=None):
 
 
 def create_device_in_ttn(dev_eui):
+    already_existed = False
+
     # Define the API endpoint and headers
     # url = f"https://{application_server_address}/api/v3/applications/{app_id}/devices"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    
+
     # Remove colons from devEui
     dev_eui = dev_eui.replace(":", "")
     
     # Generate a device_id with prefix and next available number
     device_id_ttn, already_exists_id = get_device_name(dev_eui)
     if already_exists_id:
+        already_existed = True
         print(f"Device with EUI {dev_eui} already exists in backend as {device_id_ttn}, device id {already_exists_id}.")
-        return device_id_ttn, True, None
+        user_input = input("Device already exists. Do you want to recreate it in TTN? (y/N): ").strip().lower()
+        # If user chooses to recreate, continue without returning
+        if user_input != "y":
+            return device_id_ttn, already_existed, None
+        
+    # Try to read appKey from .env file
+    env_appkey = os.getenv('APP_KEY')
+    if not env_appkey:
+        print("APP_KEY environment variable not set. Please add it to your .env file.")
+        exit(1)
+        
+    try:
+        # Convert from hex string (remove any colons if present)
+        appkey = bytes.fromhex(env_appkey.replace(":", ""))
+        if len(appkey) != 16:
+            print(f"Invalid APP_KEY length in .env file (expected 16 bytes, got {len(appkey)})")
+            exit(1)
+        print(f"Using appKey from .env file: {appkey.hex()}")
+    except ValueError:
+        print("Invalid APP_KEY format in .env file (not a valid hex string)")
+        exit(1)
 
-    # Generate a random 16-byte appKey
-    appkey = secrets.token_bytes(16)
-    print(f"Generated random appKey: {appkey.hex()}")
-
+    # If device already exists and user chose to recreate, delete it first
+    if already_exists_id:
+        delete_success = delete_device_from_ttn(device_id_ttn)
+        if not delete_success:
+            user_input = input("Device deletion had issues. Continue with recreation anyway? (y/N): ").strip().lower()
+            if user_input != "y":
+                print("Device recreation aborted.")
+                exit(1)
+            print("Continuing with device recreation despite deletion issues...")
+        
     # 1. Initial POST to create the device with minimal fields
     post_payload = {
         "end_device": {
@@ -342,7 +416,7 @@ def create_device_in_ttn(dev_eui):
     #     exit(1)
 
     print(f"Device created and updated successfully with EUI: {dev_eui}")
-    return device_id_ttn, False, appkey
+    return device_id_ttn, already_existed, appkey
 
 
 def read_deveui_from_eeprom(port, baudrate):
@@ -479,12 +553,12 @@ if __name__ == "__main__":
     else:
 
 
-        # Write the appKey to the ESP32
-        if write_appkey_to_eeprom_with_retry(esp32_port, baudrate, new_app_key):
-            print("appKey successfully written to device.")
-        else:
-            print("Failed to write appKey to device.")
-            exit(1)
+        # # Write the appKey to the ESP32
+        # if write_appkey_to_eeprom_with_retry(esp32_port, baudrate, new_app_key):
+        #     print("appKey successfully written to device.")
+        # else:
+        #     print("Failed to write appKey to device.")
+        #     exit(1)
 
         print("Device does not exist in backend, proceeding with creation.")
         # Post the device to the climateguard API

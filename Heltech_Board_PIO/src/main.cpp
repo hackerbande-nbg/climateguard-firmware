@@ -19,7 +19,8 @@ Adafruit_Sensor *bme_humidity = bme.getHumiditySensor();
 uint8_t devEui[8];
 // appEui seems to be optional, set to all zeros
 uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-uint8_t appKey[16];
+// uint8_t appKey[16];
+uint8_t appKey[] = { 0xA7, 0x3D, 0x82, 0xC5, 0x76, 0x1F, 0xE9, 0x2B, 0x94, 0x5D, 0x7E, 0x0C, 0xF3, 0x68, 0xA1, 0xD4 };
 
 
 /* ABP para*/
@@ -146,26 +147,26 @@ void setup() {
   // Initialize EEPROM (size 512 bytes)
   EEPROM.begin(512);
 
-  // Try to read appKey from EEPROM (address 16-31)
-  bool appKeyValid = false;
-  for (int i = 0; i < 16; i++) {
-    appKey[i] = EEPROM.read(16 + i);
-    if (appKey[i] != 0x00) appKeyValid = true;
-  }
-  if (!appKeyValid) {
-    // If EEPROM is empty, use default key (same as before)
-    uint8_t defaultAppKey[16] = { 0x51, 0x56, 0x65, 0xFA, 0x76, 0x40, 0xB8, 0x56, 0xA7, 0xE7, 0xB5, 0x88, 0x99, 0x9E, 0xC5, 0x20 };
-    for (int i = 0; i < 16; i++) appKey[i] = defaultAppKey[i];
-    Serial.println("appKey not found in EEPROM, using default.");
-  } else {
-    Serial.println("appKey loaded from EEPROM.");
-  }
-  Serial.print("appKey: ");
-  for (int i = 0; i < 16; i++) {
-    Serial.printf("%02X", appKey[i]);
-    if (i < 15) Serial.print(":");
-  }
-  Serial.println();
+  // // Try to read appKey from EEPROM (address 16-31)
+  // bool appKeyValid = false;
+  // for (int i = 0; i < 16; i++) {
+  //   appKey[i] = EEPROM.read(16 + i);
+  //   if (appKey[i] != 0x00) appKeyValid = true;
+  // }
+  // if (!appKeyValid) {
+  //   // If EEPROM is empty, use default key (same as before)
+  //   uint8_t defaultAppKey[16] = { 0x51, 0x56, 0x65, 0xFA, 0x76, 0x40, 0xB8, 0x56, 0xA7, 0xE7, 0xB5, 0x88, 0x99, 0x9E, 0xC5, 0x20 };
+  //   for (int i = 0; i < 16; i++) appKey[i] = defaultAppKey[i];
+  //   Serial.println("appKey not found in EEPROM, using default.");
+  // } else {
+  //   Serial.println("appKey loaded from EEPROM.");
+  // }
+  // Serial.print("appKey: ");
+  // for (int i = 0; i < 16; i++) {
+  //   Serial.printf("%02X", appKey[i]);
+  //   if (i < 15) Serial.print(":");
+  // }
+  // Serial.println();
 
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
   Serial.println(F("find a valid BME280 sensor"));
