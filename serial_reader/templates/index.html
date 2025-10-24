@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClimateGuard - Live Sensor Data</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 900px;
+            width: 100%;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+
+        .status {
+            text-align: center;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            font-weight: bold;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status.waiting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .sensor-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 25px;
+            color: white;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .sensor-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .sensor-card.temperature {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .sensor-card.humidity {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .sensor-card.pressure {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+        }
+
+        .sensor-card.voltage {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        }
+
+        .sensor-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .sensor-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .sensor-unit {
+            font-size: 1.2em;
+            opacity: 0.8;
+        }
+
+        .info-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: #666;
+            font-weight: 500;
+        }
+
+        .info-value {
+            color: #333;
+            font-weight: bold;
+        }
+
+        .loading {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #f5c6cb;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 600px) {
+            .sensor-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 1.8em;
+            }
+            
+            .sensor-value {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌡️ ClimateGuard</h1>
+        <p class="subtitle">Live Environmental Monitoring</p>
+
+        <div id="status" class="status waiting">
+            <span id="status-text">Waiting for data...</span>
+        </div>
+
+        <div class="sensor-grid">
+            <div class="sensor-card temperature">
+                <div class="sensor-label">Temperature</div>
+                <div class="sensor-value" id="temperature">--</div>
+                <div class="sensor-unit">°C</div>
+            </div>
+
+            <div class="sensor-card humidity">
+                <div class="sensor-label">Humidity</div>
+                <div class="sensor-value" id="humidity">--</div>
+                <div class="sensor-unit">%</div>
+            </div>
+
+            <div class="sensor-card pressure">
+                <div class="sensor-label">Pressure</div>
+                <div class="sensor-value" id="pressure">--</div>
+                <div class="sensor-unit">hPa</div>
+            </div>
+
+            <div class="sensor-card voltage">
+                <div class="sensor-label">Battery</div>
+                <div class="sensor-value" id="voltage">--</div>
+                <div class="sensor-unit">V</div>
+            </div>
+        </div>
+
+        <div id="error-message" class="error" style="display: none;"></div>
+
+        <div class="info-section">
+            <div class="info-row">
+                <span class="info-label">Last Update</span>
+                <span class="info-value" id="last-update">Never</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Device Uptime</span>
+                <span class="info-value" id="device-uptime">--</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Refresh Rate</span>
+                <span class="info-value">1 second</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>ClimateGuard Serial Reader v1.0</p>
+        </div>
+    </div>
+
+    <script>
+        let hasReceivedData = false;
+
+        function formatUptime(milliseconds) {
+            if (!milliseconds) return '--';
+            
+            const seconds = Math.floor(milliseconds / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            if (days > 0) {
+                return `${days}d ${hours % 24}h ${minutes % 60}m`;
+            } else if (hours > 0) {
+                return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+            } else if (minutes > 0) {
+                return `${minutes}m ${seconds % 60}s`;
+            } else {
+                return `${seconds}s`;
+            }
+        }
+
+        function updateData() {
+            fetch('/api/data')
+                .then(response => response.json())
+                .then(data => {
+                    const statusDiv = document.getElementById('status');
+                    const statusText = document.getElementById('status-text');
+                    const errorDiv = document.getElementById('error-message');
+
+                    if (data.error) {
+                        statusDiv.className = 'status disconnected';
+                        statusText.textContent = 'Connection Error';
+                        errorDiv.textContent = data.error;
+                        errorDiv.style.display = 'block';
+                        return;
+                    }
+
+                    errorDiv.style.display = 'none';
+
+                    if (data.temperature !== null) {
+                        hasReceivedData = true;
+                        statusDiv.className = 'status connected';
+                        statusText.textContent = '● Connected & Receiving Data';
+
+                        document.getElementById('temperature').textContent = 
+                            data.temperature ? data.temperature.toFixed(2) : '--';
+                        document.getElementById('humidity').textContent = 
+                            data.humidity ? data.humidity.toFixed(2) : '--';
+                        document.getElementById('pressure').textContent = 
+                            data.pressure ? data.pressure.toFixed(2) : '--';
+                        document.getElementById('voltage').textContent = 
+                            data.voltage ? data.voltage.toFixed(2) : '--';
+                        document.getElementById('last-update').textContent = 
+                            data.timestamp || 'Never';
+                        document.getElementById('device-uptime').textContent = 
+                            formatUptime(data.device_timestamp);
+                    } else if (!hasReceivedData) {
+                        statusDiv.className = 'status waiting';
+                        statusText.textContent = 'Waiting for data...';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching data:', error);
+                    const statusDiv = document.getElementById('status');
+                    const statusText = document.getElementById('status-text');
+                    statusDiv.className = 'status disconnected';
+                    statusText.textContent = 'Connection Lost';
+                });
+        }
+
+        // Update data every second
+        setInterval(updateData, 1000);
+        
+        // Initial update
+        updateData();
+    </script>
+</body>
+</html>
