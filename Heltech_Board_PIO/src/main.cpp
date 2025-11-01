@@ -90,6 +90,41 @@ float readBatteryVoltage() {
   return (millivolts / 1000.0) * 4.9;
 }
 
+/* Update display with current sensor readings */
+void updateDisplay() {
+  sensors_event_t temp_event, pressure_event, humidity_event;
+  bme_temp->getEvent(&temp_event);
+  bme_pressure->getEvent(&pressure_event);
+  bme_humidity->getEvent(&humidity_event);
+  float voltage = readBatteryVoltage();
+  
+  display.clear();
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.setFont(ArialMT_Plain_10);
+  
+  // Title
+  display.drawString(0, 0, "ClimateGuard Sensor");
+  display.drawHorizontalLine(0, 12, 128);
+  
+  // Temperature
+  display.drawString(0, 16, "Temp:");
+  display.drawString(70, 16, String(temp_event.temperature, 1) + " C");
+  
+  // Humidity
+  display.drawString(0, 28, "Humidity:");
+  display.drawString(70, 28, String(humidity_event.relative_humidity, 1) + " %");
+  
+  // Pressure
+  display.drawString(0, 40, "Pressure:");
+  display.drawString(70, 40, String(pressure_event.pressure, 0) + " hPa");
+  
+  // Battery
+  display.drawString(0, 52, "Battery:");
+  display.drawString(70, 52, String(voltage, 2) + " V");
+  
+  display.display();
+}
+
 /* Prepares the payload of the frame */
 static void prepareTxFrame(uint8_t port) {
   /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
@@ -155,28 +190,65 @@ void setup() {
   // Initialize MCU first
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
   
-  // Initialize the default I2C bus (Wire) for BME280 before display
-  // ESP32-S3 default I2C pins: SDA=GPIO17, SCL=GPIO18
-  Wire.begin(17, 18);  // SDA, SCL for the default I2C bus
-  delay(100);
-  
-  // Initialize display (this uses its own OLED I2C bus)
-  pinMode(Vext,OUTPUT);
-  digitalWrite(Vext, LOW);
-  delay(100);
-  display.init();
-  
-  // display.setFont(ArialMT_Plain_24);
-  // display.drawString(0, 26, "Setup...");
-  // display.display();
-
-  // Initialize BME280 on the default I2C bus
+  // Initialize BME280 FIRST on default I2C pins (before display initialization)
   Serial.println(F("Initializing BME280 sensor..."));
-  if (!bme.begin(0x76, &Wire)) {
+  // The BME280 is likely on the default I2C pins (GPIO 41=SDA, GPIO 42=SCL for ESP32-S3)
+  Wire.begin(41, 42);  // Default I2C pins for ESP32-S3
+  delay(100);
+  
+  // Scan default I2C bus
+  Serial.println(F("Scanning default I2C bus..."));
+  byte error, address;
+  int nDevices = 0;
+  for(address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    error = Wire.endTransmission();
+    if (error == 0) {
+      Serial.print(F("I2C device found at address 0x"));
+      if (address < 16) Serial.print("0");
+      Serial.println(address, HEX);
+      nDevices++;
+    }
+  }
+  if (nDevices == 0)
+    Serial.println(F("No I2C devices found on default bus\n"));
+  else
+    Serial.println(F("Default I2C scan done\n"));
+  
+  // Try both common addresses
+  if (!bme.begin(0x76, &Wire) && !bme.begin(0x77, &Wire)) {
     Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
     while (1) delay(10);
   }
   Serial.println(F("BME280 sensor found!"));
+  
+  // NOW initialize display on its own I2C bus (separate from BME280)
+  Serial.println(F("Initializing display..."));
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, LOW);  // Power on the OLED
+  delay(200);  // Give more time for display power up
+  
+  // Reset display
+  pinMode(RST_OLED, OUTPUT);
+  digitalWrite(RST_OLED, LOW);
+  delay(50);
+  digitalWrite(RST_OLED, HIGH);
+  delay(50);
+  
+  display.init();
+  display.clear();
+  display.display();  // Clear any garbage first
+  delay(100);
+  
+  display.setFont(ArialMT_Plain_16);
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.drawString(64, 20, "ClimateGuard");
+  display.setFont(ArialMT_Plain_10);
+  display.drawString(64, 40, "Initializing...");
+  display.display();
+  
+  Serial.println(F("Display initialized!"));
+  delay(2000);
 }
 
 void loop() {
@@ -242,20 +314,27 @@ void loop() {
       }
     case DEVICE_STATE_JOIN:
       {
-        // display.clear();
-        // display.setFont(ArialMT_Plain_24);
-        // display.drawString(0, 26, "Joining...");
-        // display.display();
+        display.clear();
+        display.setTextAlignment(TEXT_ALIGN_CENTER);
+        display.setFont(ArialMT_Plain_16);
+        display.drawString(64, 24, "Joining...");
+        display.display();
 
         LoRaWAN.join();
         break;
       }
     case DEVICE_STATE_SEND:
       {
-        // display.clear();
-        // display.setFont(ArialMT_Plain_24);
-        // display.drawString(0, 26, "Sending...");
-        // display.display();
+        // Update display with current sensor data
+        updateDisplay();
+        delay(1000); // Show data for 1 second
+        
+        // Show sending status
+        display.clear();
+        display.setTextAlignment(TEXT_ALIGN_CENTER);
+        display.setFont(ArialMT_Plain_16);
+        display.drawString(64, 24, "Sending...");
+        display.display();
 
         prepareTxFrame(appPort);
         LoRaWAN.send();
@@ -264,6 +343,15 @@ void loop() {
       }
     case DEVICE_STATE_CYCLE:
       {
+        // Show success message
+        display.clear();
+        display.setTextAlignment(TEXT_ALIGN_CENTER);
+        display.setFont(ArialMT_Plain_16);
+        display.drawString(64, 20, "Sent!");
+        display.setFont(ArialMT_Plain_10);
+        display.drawString(64, 40, "Next in 10 min");
+        display.display();
+        
         // Schedule next packet transmission
         txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
         LoRaWAN.cycle(txDutyCycleTime);
