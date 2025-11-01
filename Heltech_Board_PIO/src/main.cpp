@@ -9,7 +9,9 @@
 #include <Wire.h>               
 #include "HT_SSD1306Wire.h"
 
-static SSD1306Wire  display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr , freq , i2c group , resolution , rst
+// Try using Wire (bus 0) for the display since we initialize it properly
+// Change back to use the default Wire bus for OLED
+static SSD1306Wire  display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr, freq, SDA, SCL, geometry, rst
 
 
 #define Read_VBAT_Voltage 1
@@ -190,56 +192,37 @@ void setup() {
   // Initialize MCU first
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
   
-  // Initialize BME280 FIRST on default I2C pins (before display initialization)
-  Serial.println(F("Initializing BME280 sensor..."));
-  // The BME280 is likely on the default I2C pins (GPIO 41=SDA, GPIO 42=SCL for ESP32-S3)
-  Wire.begin(41, 42);  // Default I2C pins for ESP32-S3
-  delay(100);
+  // DON'T initialize any Wire buses yet - let the display do it first
+  Serial.println(F("Initializing display FIRST..."));
   
-  // Scan default I2C bus
-  Serial.println(F("Scanning default I2C bus..."));
-  byte error, address;
-  int nDevices = 0;
-  for(address = 1; address < 127; address++) {
-    Wire.beginTransmission(address);
-    error = Wire.endTransmission();
-    if (error == 0) {
-      Serial.print(F("I2C device found at address 0x"));
-      if (address < 16) Serial.print("0");
-      Serial.println(address, HEX);
-      nDevices++;
-    }
-  }
-  if (nDevices == 0)
-    Serial.println(F("No I2C devices found on default bus\n"));
-  else
-    Serial.println(F("Default I2C scan done\n"));
-  
-  // Try both common addresses
-  if (!bme.begin(0x76, &Wire) && !bme.begin(0x77, &Wire)) {
-    Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
-    while (1) delay(10);
-  }
-  Serial.println(F("BME280 sensor found!"));
-  
-  // NOW initialize display on its own I2C bus (separate from BME280)
-  Serial.println(F("Initializing display..."));
+  // Power on and reset display
   pinMode(Vext,OUTPUT);
-  digitalWrite(Vext, LOW);  // Power on the OLED
-  delay(200);  // Give more time for display power up
+  digitalWrite(Vext, HIGH);  // Power OFF first
+  delay(100);
+  digitalWrite(Vext, LOW);   // Power ON
+  delay(200);
   
-  // Reset display
   pinMode(RST_OLED, OUTPUT);
   digitalWrite(RST_OLED, LOW);
   delay(50);
   digitalWrite(RST_OLED, HIGH);
   delay(50);
   
+  // Let display.init() initialize its own I2C bus
   display.init();
-  display.clear();
-  display.display();  // Clear any garbage first
-  delay(100);
+  Serial.println(F("Display init() called"));
   
+  display.displayOn();
+  display.flipScreenVertically();
+  display.setContrast(255);
+  
+  display.clear();
+  display.drawRect(0, 0, 128, 64);
+  display.fillRect(10, 10, 20, 20);
+  display.display();
+  delay(1000);
+  
+  display.clear();
   display.setFont(ArialMT_Plain_16);
   display.setTextAlignment(TEXT_ALIGN_CENTER);
   display.drawString(64, 20, "ClimateGuard");
@@ -249,6 +232,37 @@ void setup() {
   
   Serial.println(F("Display initialized!"));
   delay(2000);
+  
+  // NOW initialize BME280 on Wire1 with different I2C pins
+  Serial.println(F("Initializing BME280 sensor..."));
+  Wire1.begin(41, 42);  // Wire1 for BME280 on GPIO 41/42
+  delay(100);
+  
+  // Scan default I2C bus
+  Serial.println(F("Scanning Wire1 I2C bus (BME280 bus)..."));
+  byte error, address;
+  int nDevices = 0;
+  for(address = 1; address < 127; address++) {
+    Wire1.beginTransmission(address);
+    error = Wire1.endTransmission();
+    if (error == 0) {
+      Serial.print(F("I2C device found at address 0x"));
+      if (address < 16) Serial.print("0");
+      Serial.println(address, HEX);
+      nDevices++;
+    }
+  }
+  if (nDevices == 0)
+    Serial.println(F("No I2C devices found on Wire1 bus\n"));
+  else
+    Serial.println(F("Wire1 I2C scan done\n"));
+  
+  // Try both common addresses on Wire1
+  if (!bme.begin(0x76, &Wire1) && !bme.begin(0x77, &Wire1)) {
+    Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
+    while (1) delay(10);
+  }
+  Serial.println(F("BME280 sensor found!"));
 }
 
 void loop() {
