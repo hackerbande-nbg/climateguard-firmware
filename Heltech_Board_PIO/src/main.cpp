@@ -6,6 +6,12 @@
 #include <Wire.h>
 #include <EEPROM.h>
 
+#include <Wire.h>               
+#include "HT_SSD1306Wire.h"
+
+static SSD1306Wire  display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr , freq , i2c group , resolution , rst
+
+
 #define Read_VBAT_Voltage 1
 #define ADC_CTRL 37 // Heltec GPIO to toggle VBatt read connection …
 #define ADC_READ_STABILIZE 10 // in ms (delay from GPIO control and ADC connections times)
@@ -140,40 +146,37 @@ static void prepareTxFrame(uint8_t port) {
 
 
 void setup() {
-  pinMode(ADC_CTRL, OUTPUT);
-
   Serial.begin(115200);
-  // analogReadResolution(12);
+  pinMode(ADC_CTRL, OUTPUT);
+  
   // Initialize EEPROM (size 512 bytes)
   EEPROM.begin(512);
 
-  // // Try to read appKey from EEPROM (address 16-31)
-  // bool appKeyValid = false;
-  // for (int i = 0; i < 16; i++) {
-  //   appKey[i] = EEPROM.read(16 + i);
-  //   if (appKey[i] != 0x00) appKeyValid = true;
-  // }
-  // if (!appKeyValid) {
-  //   // If EEPROM is empty, use default key (same as before)
-  //   uint8_t defaultAppKey[16] = { 0x51, 0x56, 0x65, 0xFA, 0x76, 0x40, 0xB8, 0x56, 0xA7, 0xE7, 0xB5, 0x88, 0x99, 0x9E, 0xC5, 0x20 };
-  //   for (int i = 0; i < 16; i++) appKey[i] = defaultAppKey[i];
-  //   Serial.println("appKey not found in EEPROM, using default.");
-  // } else {
-  //   Serial.println("appKey loaded from EEPROM.");
-  // }
-  // Serial.print("appKey: ");
-  // for (int i = 0; i < 16; i++) {
-  //   Serial.printf("%02X", appKey[i]);
-  //   if (i < 15) Serial.print(":");
-  // }
-  // Serial.println();
-
+  // Initialize MCU first
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
-  Serial.println(F("find a valid BME280 sensor"));
-  if (!bme.begin(0x76)) {
+  
+  // Initialize the default I2C bus (Wire) for BME280 before display
+  // ESP32-S3 default I2C pins: SDA=GPIO17, SCL=GPIO18
+  Wire.begin(17, 18);  // SDA, SCL for the default I2C bus
+  delay(100);
+  
+  // Initialize display (this uses its own OLED I2C bus)
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, LOW);
+  delay(100);
+  display.init();
+  
+  // display.setFont(ArialMT_Plain_24);
+  // display.drawString(0, 26, "Setup...");
+  // display.display();
+
+  // Initialize BME280 on the default I2C bus
+  Serial.println(F("Initializing BME280 sensor..."));
+  if (!bme.begin(0x76, &Wire)) {
     Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
     while (1) delay(10);
   }
+  Serial.println(F("BME280 sensor found!"));
 }
 
 void loop() {
@@ -239,11 +242,21 @@ void loop() {
       }
     case DEVICE_STATE_JOIN:
       {
+        // display.clear();
+        // display.setFont(ArialMT_Plain_24);
+        // display.drawString(0, 26, "Joining...");
+        // display.display();
+
         LoRaWAN.join();
         break;
       }
     case DEVICE_STATE_SEND:
       {
+        // display.clear();
+        // display.setFont(ArialMT_Plain_24);
+        // display.drawString(0, 26, "Sending...");
+        // display.display();
+
         prepareTxFrame(appPort);
         LoRaWAN.send();
         deviceState = DEVICE_STATE_CYCLE;
