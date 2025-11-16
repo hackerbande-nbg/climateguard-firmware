@@ -1,4 +1,4 @@
-#include "config.h"  // Include the new config file first
+#include "config.h" // Include the new config file first
 #include "LoRaWan_APP.h"
 #include <Adafruit_BME280.h>
 
@@ -9,10 +9,10 @@
 #include "led.h"
 
 #define Read_VBAT_Voltage 1
-#define ADC_CTRL 37 // Heltec GPIO to toggle VBatt read connection …
+#define ADC_CTRL 37           // Heltec GPIO to toggle VBatt read connection …
 #define ADC_READ_STABILIZE 10 // in ms (delay from GPIO control and ADC connections times)
 
-Adafruit_BME280 bme;  // use I2C interface
+Adafruit_BME280 bme; // use I2C interface
 Adafruit_Sensor *bme_temp = bme.getTemperatureSensor();
 Adafruit_Sensor *bme_pressure = bme.getPressureSensor();
 Adafruit_Sensor *bme_humidity = bme.getHumiditySensor();
@@ -20,7 +20,7 @@ Adafruit_Sensor *bme_humidity = bme.getHumiditySensor();
 // devEUI will be auto generated, -D LORAWAN_DEVEUI_AUTO should be set
 uint8_t devEui[8];
 // appEui seems to be optional, set to all zeros
-uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t appEui[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 // uint8_t appKey[16];
 uint8_t appKey[] = { 0xA7, 0x3D, 0x82, 0xC5, 0x76, 0x1F, 0xE9, 0x2B, 0x94, 0x5D, 0x7E, 0x0C, 0xF3, 0x68, 0xA1, 0xD4 };
 
@@ -31,11 +31,11 @@ uint8_t appSKey[] = { 0xd7, 0x2c, 0x78, 0x75, 0x8c, 0xdc, 0xca, 0xbf, 0x55, 0xee
 uint32_t devAddr = (uint32_t)0x007e6ae1;
 
 /*LoraWan channelsmask, default channels 0-7*/
-uint16_t userChannelsMask[6] = { 0x00FF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 };
+uint16_t userChannelsMask[6] = {0x00FF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000};
 
 /*LoraWan region, select in arduino IDE tools*/
-LoRaMacRegion_t loraWanRegion = LORAMAC_REGION_EU868; 
-// LoRaMacRegion_t loraWanRegion = ACTIVE_REGION; 
+LoRaMacRegion_t loraWanRegion = LORAMAC_REGION_EU868;
+// LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 
 /*LoraWan Class, Class A and Class C are supported*/
 DeviceClass_t loraWanClass = CLASS_A;
@@ -57,29 +57,30 @@ bool isTxConfirmed = true;
 /* Application port */
 uint8_t appPort = 2;
 /*!
-* Number of trials to transmit the frame, if the LoRaMAC layer did not
-* receive an acknowledgment. The MAC performs a datarate adaptation,
-* according to the LoRaWAN Specification V1.0.2, chapter 18.4, according
-* to the following table:
-*
-* Transmission nb | Data Rate
-* ----------------|-----------
-* 1 (first)       | DR
-* 2               | DR
-* 3               | max(DR-1,0)
-* 4               | max(DR-1,0)
-* 5               | max(DR-2,0)
-* 6               | max(DR-2,0)
-* 7               | max(DR-3,0)
-* 8               | max(DR-3,0)
-*
-* Note, that if NbTrials is set to 1 or 2, the MAC will not decrease
-* the datarate, in case the LoRaMAC layer did not receive an acknowledgment
-*/
+ * Number of trials to transmit the frame, if the LoRaMAC layer did not
+ * receive an acknowledgment. The MAC performs a datarate adaptation,
+ * according to the LoRaWAN Specification V1.0.2, chapter 18.4, according
+ * to the following table:
+ *
+ * Transmission nb | Data Rate
+ * ----------------|-----------
+ * 1 (first)       | DR
+ * 2               | DR
+ * 3               | max(DR-1,0)
+ * 4               | max(DR-1,0)
+ * 5               | max(DR-2,0)
+ * 6               | max(DR-2,0)
+ * 7               | max(DR-3,0)
+ * 8               | max(DR-3,0)
+ *
+ * Note, that if NbTrials is set to 1 or 2, the MAC will not decrease
+ * the datarate, in case the LoRaMAC layer did not receive an acknowledgment
+ */
 uint8_t confirmedNbTrials = 4;
 
 /* Liest die Batteriespannung und gibt sie als float (V) zurück */
-float readBatteryVoltage() {
+float readBatteryVoltage()
+{
   digitalWrite(ADC_CTRL, HIGH);
   delay(ADC_READ_STABILIZE);
   int millivolts = analogReadMilliVolts(Read_VBAT_Voltage);
@@ -89,14 +90,15 @@ float readBatteryVoltage() {
 }
 
 /* Prepares the payload of the frame */
-static void prepareTxFrame(uint8_t port) {
+static void prepareTxFrame(uint8_t port)
+{
   /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
-  *appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
-  *if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
-  *if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
-  *for example, if use REGION_CN470, 
-  *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
-  */
+   *appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
+   *if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
+   *if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
+   *for example, if use REGION_CN470,
+   *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
+   */
 
   // sensors_event_t temp_event, pressure_event, humidity_event;
   // bme_temp->getEvent(&temp_event);
@@ -118,23 +120,23 @@ static void prepareTxFrame(uint8_t port) {
   float voltage = readBatteryVoltage();
 
   // Konvertiere Temperatur, Luftfeuchtigkeit und Druck in Integer
-  int16_t temperature = (int16_t)(temp_event.temperature * 100);           // Skalierung auf 2 Dezimalstellen
-  uint16_t humidity = (uint16_t)(humidity_event.relative_humidity * 100);  // Skalierung auf 2 Dezimalstellen
-  uint32_t pressure = (uint32_t)(pressure_event.pressure * 100);           // Skalierung auf 2 Dezimalstellen
-  uint16_t voltageInt = (uint16_t)(voltage * 100); // Skalierung auf 2 Dezimalstellen
+  int16_t temperature = (int16_t)(temp_event.temperature * 100);          // Skalierung auf 2 Dezimalstellen
+  uint16_t humidity = (uint16_t)(humidity_event.relative_humidity * 100); // Skalierung auf 2 Dezimalstellen
+  uint32_t pressure = (uint32_t)(pressure_event.pressure * 100);          // Skalierung auf 2 Dezimalstellen
+  uint16_t voltageInt = (uint16_t)(voltage * 100);                        // Skalierung auf 2 Dezimalstellen
 
   // AppData-Größe festlegen (1 version byte + 9 data bytes)
   appDataSize = 10;
 
   // Payload zusammenstellen
-  appData[0] = 1; // Version byte
-  appData[1] = (temperature >> 8) & 0xFF;  // Temperatur, MSB
-  appData[2] = temperature & 0xFF;         // Temperatur, LSB
-  appData[3] = (humidity >> 8) & 0xFF;     // Luftfeuchtigkeit, MSB
-  appData[4] = humidity & 0xFF;            // Luftfeuchtigkeit, LSB
-  appData[5] = (pressure >> 16) & 0xFF;    // Druck, MSB
-  appData[6] = (pressure >> 8) & 0xFF;     // Druck, mittleres Byte
-  appData[7] = pressure & 0xFF;            // Druck, LSB
+  appData[0] = 1;                         // Version byte
+  appData[1] = (temperature >> 8) & 0xFF; // Temperatur, MSB
+  appData[2] = temperature & 0xFF;        // Temperatur, LSB
+  appData[3] = (humidity >> 8) & 0xFF;    // Luftfeuchtigkeit, MSB
+  appData[4] = humidity & 0xFF;           // Luftfeuchtigkeit, LSB
+  appData[5] = (pressure >> 16) & 0xFF;   // Druck, MSB
+  appData[6] = (pressure >> 8) & 0xFF;    // Druck, mittleres Byte
+  appData[7] = pressure & 0xFF;           // Druck, LSB
   appData[8] = (voltageInt >> 8) & 0xFF;  // Spannung, MSB
   appData[9] = voltageInt & 0xFF;         // Spannung, LSB
 }
@@ -213,61 +215,75 @@ void setup()
   set_led(false);
 }
 
-void loop() {
+void loop()
+{
 
   // Check for incoming serial commands to set appKey
-  if (Serial.available()) {
+  if (Serial.available())
+  {
     uint8_t cmd = Serial.read();
-    switch (cmd) {
-      case 0xF0:  // Command to set appKey
-      {
-        // Wait for 16 bytes (appKey)
-        uint8_t keyBuf[16];
-        int received = 0;
-        unsigned long start = millis();
-        while (received < 16 && (millis() - start) < 2000) { // 2s timeout
-          if (Serial.available()) {
-            keyBuf[received++] = Serial.read();
-          }
+    switch (cmd)
+    {
+    case 0xF0: // Command to set appKey
+    {
+      // Wait for 16 bytes (appKey)
+      uint8_t keyBuf[16];
+      int received = 0;
+      unsigned long start = millis();
+      while (received < 16 && (millis() - start) < 2000)
+      { // 2s timeout
+        if (Serial.available())
+        {
+          keyBuf[received++] = Serial.read();
         }
-        if (received == 16) {
-          // Store appKey in EEPROM (address 16-31)
-          for (int i = 0; i < 16; i++) {
-            EEPROM.write(16 + i, keyBuf[i]);
-            appKey[i] = keyBuf[i];
-          }
-          if (EEPROM.commit()) {
-            Serial.write(0xAA); // ACK
-            Serial.println("appKey written to EEPROM successfully!");
-          } else {
-            Serial.write(0xEE); // ERROR
-            Serial.println("Failed to commit appKey to EEPROM");
-          }
-        } else {
+      }
+      if (received == 16)
+      {
+        // Store appKey in EEPROM (address 16-31)
+        for (int i = 0; i < 16; i++)
+        {
+          EEPROM.write(16 + i, keyBuf[i]);
+          appKey[i] = keyBuf[i];
+        }
+        if (EEPROM.commit())
+        {
+          Serial.write(0xAA); // ACK
+          Serial.println("appKey written to EEPROM successfully!");
+        }
+        else
+        {
           Serial.write(0xEE); // ERROR
-          Serial.println("Timeout or incomplete appKey received");
+          Serial.println("Failed to commit appKey to EEPROM");
         }
-        break;
       }
-      case 0xEF:  // Command to read devEui
+      else
       {
-        Serial.write(0xAA); // ACK
-        for (int i = 0; i < 8; i++) {
-          Serial.write(devEui[i]);
-        }
-        break;
+        Serial.write(0xEE); // ERROR
+        Serial.println("Timeout or incomplete appKey received");
       }
-      default:
-        // Unknown command, ignore or handle as needed
-        break;
+      break;
+    }
+    case 0xEF: // Command to read devEui
+    {
+      Serial.write(0xAA); // ACK
+      for (int i = 0; i < 8; i++)
+      {
+        Serial.write(devEui[i]);
+      }
+      break;
+    }
+    default:
+      // Unknown command, ignore or handle as needed
+      break;
     }
   }
 
-  switch (deviceState) {
-    case DEVICE_STATE_INIT:
-      {
+  switch (deviceState)
+  {
+  case DEVICE_STATE_INIT:
+  {
 #if (LORAWAN_DEVEUI_AUTO)
-        LoRaWAN.generateDeveuiByChipID();
+    LoRaWAN.generateDeveuiByChipID();
 #endif
         LoRaWAN.init(loraWanClass, loraWanRegion);
         //both set join DR and DR when ADR off
@@ -302,13 +318,12 @@ void loop() {
         // Serial.println("Going to sleep now...");
         // esp_deep_sleep_start();
 
-        break;
-      }
-    default:
-      {
-        deviceState = DEVICE_STATE_INIT;
-        break;
-      }
+    break;
   }
-
+  default:
+  {
+    deviceState = DEVICE_STATE_INIT;
+    break;
+  }
+  }
 }
