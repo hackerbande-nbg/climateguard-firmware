@@ -151,11 +151,14 @@ void VextOFF(void) // Vext default OFF
 
 void start_deep_sleep()
 {
-  LoRaWAN.sleep(loraWanClass);
+  // LoRaWAN.sleep(loraWanClass);
+
+  bme.setSampling(Adafruit_BME280::MODE_SLEEP);
 
   VextOFF();
   Radio.Sleep();
   SPI.end();
+  Wire.end();
   pinMode(RADIO_DIO_1, ANALOG);
   pinMode(RADIO_NSS, ANALOG);
   pinMode(RADIO_RESET, ANALOG);
@@ -285,38 +288,42 @@ void loop()
 #if (LORAWAN_DEVEUI_AUTO)
     LoRaWAN.generateDeveuiByChipID();
 #endif
-        LoRaWAN.init(loraWanClass, loraWanRegion);
-        //both set join DR and DR when ADR off
-        LoRaWAN.setDefaultDR(3);
-        break;
-      }
-    case DEVICE_STATE_JOIN:
-      {
-        LoRaWAN.join();
-        break;
-      }
-    case DEVICE_STATE_SEND:
-      {
-        prepareTxFrame(appPort);
-        LoRaWAN.send();
-        deviceState = DEVICE_STATE_CYCLE;
-        break;
-      }
-    case DEVICE_STATE_CYCLE:
-      {
-        // Schedule next packet transmission
-        txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
-        LoRaWAN.cycle(txDutyCycleTime);
-        deviceState = DEVICE_STATE_SLEEP;
-        break;
-      }
-    case DEVICE_STATE_SLEEP:
-      {
-        LoRaWAN.sleep(loraWanClass);
-        // // Set deep sleep timer for 10 minutes
-        // esp_sleep_enable_timer_wakeup(appTxDutyCycle * 1000);
-        // Serial.println("Going to sleep now...");
-        // esp_deep_sleep_start();
+    LoRaWAN.init(loraWanClass, loraWanRegion);
+    // both set join DR and DR when ADR off
+    LoRaWAN.setDefaultDR(3);
+    break;
+  }
+  case DEVICE_STATE_JOIN:
+  {
+    LoRaWAN.join();
+    break;
+  }
+  case DEVICE_STATE_SEND:
+  {
+    prepareTxFrame(appPort);
+    LoRaWAN.send();
+    deviceState = DEVICE_STATE_CYCLE;
+    break;
+  }
+  case DEVICE_STATE_CYCLE:
+  {
+    // Schedule next packet transmission
+    txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
+    LoRaWAN.cycle(txDutyCycleTime);
+    deviceState = DEVICE_STATE_SLEEP;
+    break;
+  }
+  case DEVICE_STATE_SLEEP:
+  {
+    txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
+
+    Serial.printf("Enter deep sleep for %u ms\n", txDutyCycleTime);
+    start_deep_sleep();
+
+    // // Set deep sleep timer for 10 minutes
+    // esp_sleep_enable_timer_wakeup(appTxDutyCycle * 1000);
+    // Serial.println("Going to sleep now...");
+    // esp_deep_sleep_start();
 
     break;
   }
