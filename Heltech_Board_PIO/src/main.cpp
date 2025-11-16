@@ -6,6 +6,8 @@
 #include <Wire.h>
 #include <EEPROM.h>
 
+#include "led.h"
+
 #define Read_VBAT_Voltage 1
 #define ADC_CTRL 37 // Heltec GPIO to toggle VBatt read connection …
 #define ADC_READ_STABILIZE 10 // in ms (delay from GPIO control and ADC connections times)
@@ -135,19 +137,45 @@ static void prepareTxFrame(uint8_t port) {
   appData[7] = pressure & 0xFF;            // Druck, LSB
   appData[8] = (voltageInt >> 8) & 0xFF;  // Spannung, MSB
   appData[9] = voltageInt & 0xFF;         // Spannung, LSB
-
 }
 
-//if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ
+// if true, next uplink will add MOTE_MAC_DEVICE_TIME_REQ
 
+void VextOFF(void) // Vext default OFF
+{
+  pinMode(Vext, OUTPUT);
+  digitalWrite(Vext, HIGH);
+}
 
-void setup() {
+void start_deep_sleep()
+{
+  LoRaWAN.sleep(loraWanClass);
+
+  VextOFF();
+  Radio.Sleep();
+  SPI.end();
+  pinMode(RADIO_DIO_1, ANALOG);
+  pinMode(RADIO_NSS, ANALOG);
+  pinMode(RADIO_RESET, ANALOG);
+  pinMode(RADIO_BUSY, ANALOG);
+  pinMode(LORA_CLK, ANALOG);
+  pinMode(LORA_MISO, ANALOG);
+  pinMode(LORA_MOSI, ANALOG);
+  esp_sleep_enable_timer_wakeup(txDutyCycleTime * 1000);
+  esp_deep_sleep_start();
+}
+
+void setup()
+{
   pinMode(ADC_CTRL, OUTPUT);
 
   Serial.begin(115200);
   // analogReadResolution(12);
   // Initialize EEPROM (size 512 bytes)
   EEPROM.begin(512);
+
+  setup_led();
+  set_led(true);
 
   // // Try to read appKey from EEPROM (address 16-31)
   // bool appKeyValid = false;
@@ -171,11 +199,18 @@ void setup() {
   // Serial.println();
 
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
-  Serial.println(F("find a valid BME280 sensor"));
-  if (!bme.begin(0x76)) {
-    Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
-    while (1) delay(10);
+
+  Serial.println(F("Looking for a BME280 sensor"));
+  while (!bme.begin(0x76))
+  {
+    toggle_led();
+    Serial.println(F("Could not find a BME280 sensor, check wiring!"));
+    delay(1000);
   }
+
+  Serial.println("Found BME280 sensor");
+
+  set_led(false);
 }
 
 void loop() {
