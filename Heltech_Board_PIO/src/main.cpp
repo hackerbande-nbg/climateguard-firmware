@@ -261,6 +261,7 @@ void loop() {
       }
     case DEVICE_STATE_SLEEP:
       {
+        bme.setSampling(Adafruit_BME280::MODE_SLEEP);
         LoRaWAN.sleep(loraWanClass);
         // // Set deep sleep timer for 10 minutes
         // esp_sleep_enable_timer_wakeup(appTxDutyCycle * 1000);
