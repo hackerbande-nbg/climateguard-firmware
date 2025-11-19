@@ -149,27 +149,6 @@ void VextOFF(void) // Vext default OFF
   digitalWrite(Vext, HIGH);
 }
 
-void start_deep_sleep()
-{
-  // LoRaWAN.sleep(loraWanClass);
-
-  bme.setSampling(Adafruit_BME280::MODE_SLEEP);
-
-  VextOFF();
-  Radio.Sleep();
-  SPI.end();
-  Wire.end();
-  pinMode(RADIO_DIO_1, ANALOG);
-  pinMode(RADIO_NSS, ANALOG);
-  pinMode(RADIO_RESET, ANALOG);
-  pinMode(RADIO_BUSY, ANALOG);
-  pinMode(LORA_CLK, ANALOG);
-  pinMode(LORA_MISO, ANALOG);
-  pinMode(LORA_MOSI, ANALOG);
-  esp_sleep_enable_timer_wakeup(txDutyCycleTime * 1000);
-  esp_deep_sleep_start();
-}
-
 void setup()
 {
   pinMode(ADC_CTRL, OUTPUT);
@@ -302,6 +281,9 @@ void loop()
   {
     prepareTxFrame(appPort);
     LoRaWAN.send();
+
+  	bme.setSampling(Adafruit_BME280::MODE_SLEEP);
+
     deviceState = DEVICE_STATE_CYCLE;
     break;
   }
@@ -315,16 +297,7 @@ void loop()
   }
   case DEVICE_STATE_SLEEP:
   {
-    txDutyCycleTime = appTxDutyCycle + randr(-APP_TX_DUTYCYCLE_RND, APP_TX_DUTYCYCLE_RND);
-
-    Serial.printf("Enter deep sleep for %u ms\n", txDutyCycleTime);
-    start_deep_sleep();
-
-    // // Set deep sleep timer for 10 minutes
-    // esp_sleep_enable_timer_wakeup(appTxDutyCycle * 1000);
-    // Serial.println("Going to sleep now...");
-    // esp_deep_sleep_start();
-
+	LoRaWAN.sleep(loraWanClass);
     break;
   }
   default:
