@@ -6,6 +6,8 @@
 #include <Wire.h>
 #include <EEPROM.h>
 
+#include "led.h"
+
 #define Read_VBAT_Voltage 1
 #define ADC_CTRL 37 // Heltec GPIO to toggle VBatt read connection …
 #define ADC_READ_STABILIZE 10 // in ms (delay from GPIO control and ADC connections times)
@@ -22,7 +24,6 @@ uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 // uint8_t appKey[16];
 uint8_t appKey[] = { 0xA7, 0x3D, 0x82, 0xC5, 0x76, 0x1F, 0xE9, 0x2B, 0x94, 0x5D, 0x7E, 0x0C, 0xF3, 0x68, 0xA1, 0xD4 };
 
-
 /* ABP para*/
 uint8_t nwkSKey[] = { 0x15, 0xb1, 0xd0, 0xef, 0xa4, 0x63, 0xdf, 0xbe, 0x3d, 0x11, 0x18, 0x1e, 0x1e, 0xc7, 0xda, 0x85 };
 uint8_t appSKey[] = { 0xd7, 0x2c, 0x78, 0x75, 0x8c, 0xdc, 0xca, 0xbf, 0x55, 0xee, 0x4a, 0x77, 0x8d, 0x16, 0xef, 0x67 };
@@ -32,8 +33,8 @@ uint32_t devAddr = (uint32_t)0x007e6ae1;
 uint16_t userChannelsMask[6] = { 0x00FF, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 };
 
 /*LoraWan region, select in arduino IDE tools*/
-LoRaMacRegion_t loraWanRegion = LORAMAC_REGION_EU868; 
-// LoRaMacRegion_t loraWanRegion = ACTIVE_REGION; 
+LoRaMacRegion_t loraWanRegion = LORAMAC_REGION_EU868;
+// LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 
 /*LoraWan Class, Class A and Class C are supported*/
 DeviceClass_t loraWanClass = CLASS_A;
@@ -92,7 +93,7 @@ static void prepareTxFrame(uint8_t port) {
   *appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
   *if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
   *if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
-  *for example, if use REGION_CN470, 
+  *for example, if use REGION_CN470,
   *the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
   */
 
@@ -149,6 +150,9 @@ void setup() {
   // Initialize EEPROM (size 512 bytes)
   EEPROM.begin(512);
 
+  setup_led();
+  set_led(false);
+
   // // Try to read appKey from EEPROM (address 16-31)
   // bool appKeyValid = false;
   // for (int i = 0; i < 16; i++) {
@@ -171,11 +175,18 @@ void setup() {
   // Serial.println();
 
   Mcu.begin(HELTEC_BOARD, SLOW_CLK_TPYE);
-  Serial.println(F("find a valid BME280 sensor"));
-  if (!bme.begin(0x76)) {
-    Serial.println(F("Could not find a valid BME280 sensor, check wiring!"));
-    while (1) delay(10);
+
+  Serial.println(F("Looking for a BME280 sensor"));
+  while (!bme.begin(0x76))
+  {
+    toggle_led();
+    Serial.println(F("Could not find a BME280 sensor, check wiring!"));
+    delay(1000);
   }
+
+  Serial.println("Found BME280 sensor");
+
+  set_led(false);
 }
 
 void loop() {
@@ -248,6 +259,8 @@ void loop() {
       {
         prepareTxFrame(appPort);
         LoRaWAN.send();
+
+  	    bme.setSampling(Adafruit_BME280::MODE_SLEEP);
         deviceState = DEVICE_STATE_CYCLE;
         break;
       }
