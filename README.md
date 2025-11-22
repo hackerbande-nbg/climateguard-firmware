@@ -5,7 +5,7 @@ This Repo contains Firmware for the climateguard project as  well as a python to
 The Firmware was built using the PlatformIO extension with VS Code. 
 Capabilities of the firmware:
 - Create a Device EUI from the MAC and deliver it via Serial, if prompted with the right command (see Flasher)
-- Read 2 kinds of temperature sensors 
+- Read BME280 temperature sensor 
 - Connect to The Things Network (TTN) and send the data to the TTN server
 
 Open:
